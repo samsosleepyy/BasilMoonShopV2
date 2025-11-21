@@ -607,3 +607,10 @@ async def setup(interaction: discord.Interaction,
     await interaction.response.send_message("ตั้งค่าเรียบร้อยแล้ว ✅", ephemeral=True)
 
 bot.run(TOKEN)
+if __name__ == '__main__':
+    keep_alive() # สั่งรัน Web Server
+    
+    if TOKEN:
+        bot.run(TOKEN)
+    else:
+        print("Error: ไม่พบ TOKEN ใน Environment Variables")
