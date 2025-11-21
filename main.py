@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from flask import Flask
 from threading import Thread
 
-# --- KEEP ALIVE SERVER (สำหรับ Render) ---
+# --- KEEP ALIVE SERVER ---
 app = Flask('')
 
 @app.route('/')
@@ -24,8 +24,7 @@ def keep_alive():
     t.start()
 
 # --- CONFIGURATION ---
-# ใส่ Token บอทของคุณตรงนี้ หรือใช้ Environment Variable ถ้าใช้ Render
-TOKEN = os.environ.get('TOKEN') or 'YOUR_BOT_TOKEN_HERE' 
+TOKEN = os.environ.get('TOKEN') or 'YOUR_BOT_TOKEN_HERE'
 
 # --- DATA MANAGEMENT ---
 DATA_FILE = "auction_data.json"
@@ -34,11 +33,11 @@ def load_data():
     if not os.path.exists(DATA_FILE):
         return {
             "admins": [],
-            "support_ids": [], 
+            "support_ids": [],
             "setup": {},
             "auction_count": 0,
-            "lock_time": 120, 
-            "active_auctions": {} 
+            "lock_time": 120,
+            "active_auctions": {}
         }
     with open(DATA_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
@@ -55,22 +54,22 @@ intents.message_content = True
 intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# --- UTILS (UPDATED) ---
+# --- UTILS ---
 def is_admin(user):
-    # 1. Check Bot Owner
     if user.id == bot.owner_id:
         return True
-    # 2. Check Manual List (from /addadmin)
     if user.id in data["admins"]:
         return True
-    # 3. Check Discord Administrator Permission (NEW)
     if hasattr(user, "guild_permissions") and user.guild_permissions.administrator:
         return True
-        
     return False
 
+# [FIXED] ฟังก์ชันนี้แก้ให้เช็คก่อนส่งข้อความ เพื่อกัน Error 40060
 async def no_permission(interaction):
-    await interaction.response.send_message("คุณไม่มีสิทธิ์ในการใช้คำสั่ง❌", ephemeral=True)
+    if interaction.response.is_done():
+        await interaction.followup.send("คุณไม่มีสิทธิ์ในการใช้คำสั่ง❌", ephemeral=True)
+    else:
+        await interaction.response.send_message("คุณไม่มีสิทธิ์ในการใช้คำสั่ง❌", ephemeral=True)
 
 # --- MODALS ---
 
@@ -82,6 +81,7 @@ class CancelReasonModal(discord.ui.Modal, title="เหตุผลการย�
         self.auction_info = auction_info
 
     async def on_submit(self, interaction: discord.Interaction):
+        # [FIXED] ใช้ defer ก่อนเพื่อกัน Time out
         await interaction.response.defer()
         
         feedback_channel_id = data["setup"].get("feedback_channel")
@@ -124,7 +124,11 @@ class DenyReasonModal(discord.ui.Modal, title="เหตุผลไม่อน
         except:
             pass
         
-        await interaction.message.delete()
+        # ลบข้อความต้นทาง (ใช้ try กัน error)
+        try:
+            await interaction.message.delete()
+        except:
+            pass
 
 class AuctionImagesModal(discord.ui.Modal, title="ข้อมูลการประมูล (2/2)"):
     img1 = discord.ui.TextInput(label="รูป 1 (ลิ้งค์) *บังคับ", required=True)
@@ -147,6 +151,9 @@ class AuctionImagesModal(discord.ui.Modal, title="ข้อมูลการป
         except ValueError:
             return await interaction.response.send_message("รูปแบบเวลาไม่ถูกต้อง กรุณาใช้ HH:MM (เช่น 14:10)", ephemeral=True)
 
+        # [FIXED] Defer ก่อนประมวลผลหนัก
+        await interaction.response.defer(ephemeral=True)
+
         full_data = self.first_step_data
         full_data.update({
             "images": [self.img1.value, self.img2.value, self.img3.value, self.img4.value],
@@ -159,11 +166,11 @@ class AuctionImagesModal(discord.ui.Modal, title="ข้อมูลการป
 
         approval_channel_id = data["setup"].get("approval_channel")
         if not approval_channel_id:
-            return await interaction.response.send_message("ยังไม่ได้ตั้งค่าช่องอนุมัติ", ephemeral=True)
+            return await interaction.followup.send("ยังไม่ได้ตั้งค่าช่องอนุมัติ", ephemeral=True)
         
         approval_channel = interaction.guild.get_channel(approval_channel_id)
         if not approval_channel:
-            return await interaction.response.send_message("หาช่องอนุมัติไม่เจอ", ephemeral=True)
+            return await interaction.followup.send("หาช่องอนุมัติไม่เจอ", ephemeral=True)
 
         embed = discord.Embed(title="คำขอเปิดประมูลใหม่", color=discord.Color.orange())
         embed.set_author(name=interaction.user.name, icon_url=interaction.user.avatar.url if interaction.user.avatar else None)
@@ -176,7 +183,7 @@ class AuctionImagesModal(discord.ui.Modal, title="ข้อมูลการป
         embed.set_image(url=self.img1.value)
         
         await approval_channel.send(embed=embed, view=ApprovalView(full_data))
-        await interaction.response.send_message("ส่งคำขอไปยังแอดมินเรียบร้อยแล้ว รอการอนุมัติ...", ephemeral=True)
+        await interaction.followup.send("ส่งคำขอไปยังแอดมินเรียบร้อยแล้ว รอการอนุมัติ...", ephemeral=True)
 
 class AuctionDetailsModal(discord.ui.Modal, title="ข้อมูลการประมูล (1/2)"):
     start_price = discord.ui.TextInput(label="ราคาเริ่มต้น", placeholder="ใส่แค่ตัวเลข", required=True)
@@ -214,10 +221,12 @@ class TransactionView(discord.ui.View):
         auction = data["active_auctions"].get(str(interaction.channel_id))
         if not auction: return
 
-        # Check Owner OR Admin
         if interaction.user.id != auction["owner_id"] and not is_admin(interaction.user):
             return await no_permission(interaction)
         
+        # [FIXED] Defer
+        await interaction.response.defer()
+
         feedback_channel_id = data["setup"].get("feedback_channel")
         if feedback_channel_id:
             channel = interaction.guild.get_channel(feedback_channel_id)
@@ -230,7 +239,7 @@ class TransactionView(discord.ui.View):
                 embed.add_field(name="สถานะ", value="สำเร็จเสร็จสิ้น")
                 await channel.send(embed=embed)
         
-        await interaction.response.send_message("ปิดการขายเรียบร้อย ลบช่องใน 5 วินาที...")
+        await interaction.followup.send("ปิดการขายเรียบร้อย ลบช่องใน 5 วินาที...")
         await asyncio.sleep(5)
         await interaction.channel.delete()
         if str(interaction.channel_id) in data["active_auctions"]:
@@ -242,7 +251,6 @@ class TransactionView(discord.ui.View):
         auction = data["active_auctions"].get(str(interaction.channel_id))
         if not auction: return
 
-        # Check Winner OR Admin
         if interaction.user.id != auction.get("winner_id") and not is_admin(interaction.user):
             return await no_permission(interaction)
         
@@ -255,14 +263,15 @@ class TransactionView(discord.ui.View):
                 msg += f" <@{sup_id}>"
 
         await interaction.channel.send(msg)
-        await interaction.response.send_message("แจ้งเตือนแอดมินเรียบร้อยแล้ว", ephemeral=True)
+        # Check before send
+        if not interaction.response.is_done():
+            await interaction.response.send_message("แจ้งเตือนแอดมินเรียบร้อยแล้ว", ephemeral=True)
 
     @discord.ui.button(label="ยกเลิกการประมูล ❌", style=discord.ButtonStyle.red, custom_id="trans_cancel")
     async def cancel_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         auction = data["active_auctions"].get(str(interaction.channel_id))
         if not auction: return
 
-        # Check Owner OR Admin
         if interaction.user.id != auction["owner_id"] and not is_admin(interaction.user):
             return await no_permission(interaction)
 
@@ -281,8 +290,8 @@ class AuctionControlView(discord.ui.View):
         if interaction.user.id != auction["owner_id"] and not is_admin(interaction.user):
             return await no_permission(interaction)
         
-        await end_auction_process(interaction.channel, auction)
         await interaction.response.send_message("กำลังปิดการประมูล...", ephemeral=True)
+        await end_auction_process(interaction.channel, auction)
 
 class ApprovalView(discord.ui.View):
     def __init__(self, auction_data):
@@ -294,6 +303,9 @@ class ApprovalView(discord.ui.View):
         if not is_admin(interaction.user):
             return await no_permission(interaction)
 
+        # [FIXED] Defer เพราะการสร้างห้องใช้เวลา
+        await interaction.response.defer(ephemeral=True)
+
         data["auction_count"] += 1
         count = data["auction_count"]
         save_data(data)
@@ -302,11 +314,14 @@ class ApprovalView(discord.ui.View):
         category = interaction.guild.get_channel(category_id)
         
         if not category:
-            return await interaction.response.send_message("หมวดหมู่ประมูลไม่ถูกต้อง", ephemeral=True)
+            return await interaction.followup.send("หมวดหมู่ประมูลไม่ถูกต้อง", ephemeral=True)
 
         channel_name = f"การประมูลครั้งที่-{count}-ราคา-{self.auction_data['start_price']}"
         
-        channel = await interaction.guild.create_text_channel(channel_name, category=category)
+        try:
+            channel = await interaction.guild.create_text_channel(channel_name, category=category)
+        except Exception as e:
+            return await interaction.followup.send(f"สร้างห้องไม่สำเร็จ: {e}", ephemeral=True)
 
         msg_content = f"""# การประมูลครั้งที่ - {count}
 โดย <@{self.auction_data['owner_id']}>
@@ -342,7 +357,7 @@ class ApprovalView(discord.ui.View):
         }
         save_data(data)
 
-        await interaction.response.send_message(f"อนุมัติแล้ว สร้างห้องที่ {channel.mention}", ephemeral=True)
+        await interaction.followup.send(f"อนุมัติแล้ว สร้างห้องที่ {channel.mention}", ephemeral=True)
         self.stop()
 
     @discord.ui.button(label="ไม่อนุมัติ", style=discord.ButtonStyle.red)
@@ -374,8 +389,9 @@ class StartAuctionView(discord.ui.View):
 # --- LOGIC FUNCTIONS ---
 
 async def end_auction_process(channel, auction_data):
-    if str(channel.id) in data["active_auctions"]:
-        pass
+    # Check logic to avoid repeated calls
+    if str(channel.id) not in data["active_auctions"]:
+        return 
 
     winner_id = auction_data["winner_id"]
     
@@ -390,29 +406,32 @@ async def end_auction_process(channel, auction_data):
         await channel.send(f"⏳ รอเวลา {lock_wait} วินาที ก่อนทำการล็อคห้อง <t:{lock_end_ts}:R>")
         await asyncio.sleep(lock_wait)
 
-    # LOCK CHANNEL
-    await channel.send("ช่องนี้ได้เป็นช่องส่วนตัวแล้วสามารถทำธุรกรรมได้เลย...")
-    
-    overwrites = {
-        channel.guild.default_role: discord.PermissionOverwrite(view_channel=False),
-        channel.guild.me: discord.PermissionOverwrite(view_channel=True),
-    }
-    
-    owner = channel.guild.get_member(auction_data["owner_id"])
-    if owner: overwrites[owner] = discord.PermissionOverwrite(view_channel=True)
-    
-    if winner_id:
-        winner = channel.guild.get_member(winner_id)
-        if winner: overwrites[winner] = discord.PermissionOverwrite(view_channel=True)
-    
-    await channel.edit(overwrites=overwrites)
-    
-    msg_text = f"""
+    # Check if channel still exists
+    try:
+        await channel.send("ช่องนี้ได้เป็นช่องส่วนตัวแล้วสามารถทำธุรกรรมได้เลย...")
+        
+        overwrites = {
+            channel.guild.default_role: discord.PermissionOverwrite(view_channel=False),
+            channel.guild.me: discord.PermissionOverwrite(view_channel=True),
+        }
+        
+        owner = channel.guild.get_member(auction_data["owner_id"])
+        if owner: overwrites[owner] = discord.PermissionOverwrite(view_channel=True)
+        
+        if winner_id:
+            winner = channel.guild.get_member(winner_id)
+            if winner: overwrites[winner] = discord.PermissionOverwrite(view_channel=True)
+        
+        await channel.edit(overwrites=overwrites)
+        
+        msg_text = f"""
 ปุ่มสีเขียว ✅ เป็นของผู้เปิดประมูล
 ปุ่มสีเทา 💰 เป็นของผู้ชนะประมูล
 ปุ่มสีแดง ❌ เป็นของผู้เปิดประมูลและแอดมิน
-    """
-    await channel.send(msg_text, view=TransactionView(channel.id))
+        """
+        await channel.send(msg_text, view=TransactionView(channel.id))
+    except:
+        pass # Channel might be deleted
 
 # --- BACKGROUND TASKS ---
 
@@ -507,7 +526,7 @@ async def on_message(message):
 
 # --- COMMANDS ---
 
-@bot.tree.command(name="addadmin", description="เพิ่มสมาชิกที่จะสามารถใช้คำสั่งแอดมินได้ (เฉพาะคนไม่มีสิทธิ์ Admin ในดิส)")
+@bot.tree.command(name="addadmin", description="เพิ่มสมาชิกที่จะสามารถใช้คำสั่งแอดมินได้")
 async def addadmin(interaction: discord.Interaction, user: discord.User):
     if not is_admin(interaction.user):
         return await no_permission(interaction)
@@ -515,9 +534,12 @@ async def addadmin(interaction: discord.Interaction, user: discord.User):
     if user.id not in data["admins"]:
         data["admins"].append(user.id)
         save_data(data)
-        await interaction.response.send_message(f"เพิ่ม {user.mention} เป็นแอดมินเรียบร้อย ✅")
+        # [FIXED] Safe check
+        if not interaction.response.is_done():
+            await interaction.response.send_message(f"เพิ่ม {user.mention} เป็นแอดมินเรียบร้อย ✅")
     else:
-        await interaction.response.send_message(f"{user.mention} เป็นแอดมินอยู่แล้ว", ephemeral=True)
+        if not interaction.response.is_done():
+            await interaction.response.send_message(f"{user.mention} เป็นแอดมินอยู่แล้ว", ephemeral=True)
 
 @bot.tree.command(name="supportadmin", description="เพิ่ม support admin (User หรือ Role)")
 async def supportadmin(interaction: discord.Interaction, target: discord.Member = None, role: discord.Role = None):
@@ -558,6 +580,9 @@ async def setup(interaction: discord.Interaction,
     if not is_admin(interaction.user):
         return await no_permission(interaction)
 
+    # [FIXED] Defer ทันที เพื่อบอก Discord ว่า "กำลังทำอยู่นะ รอแปป" (กัน Timeout)
+    await interaction.response.defer(ephemeral=True)
+
     data["setup"] = {
         "category_id": category.id,
         "channel_id": channel.id,
@@ -574,11 +599,12 @@ async def setup(interaction: discord.Interaction,
     view = StartAuctionView(btn_label)
     await channel.send(embed=embed, view=view)
     
-    await interaction.response.send_message("ตั้งค่าเรียบร้อยแล้ว ✅", ephemeral=True)
+    # [FIXED] ใช้ followup.send เพราะเรา defer ไปแล้ว
+    await interaction.followup.send("ตั้งค่าเรียบร้อยแล้ว ✅", ephemeral=True)
 
 # --- MAIN EXECUTION ---
 if __name__ == '__main__':
-    keep_alive() # สั่งรัน Web Server
+    keep_alive() 
     
     if TOKEN:
         bot.run(TOKEN)
