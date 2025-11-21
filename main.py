@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from flask import Flask
 from threading import Thread
 
-# --- KEEP ALIVE SERVER ---
+# --- KEEP ALIVE SERVER (สำหรับ Render) ---
 app = Flask('')
 
 @app.route('/')
@@ -24,6 +24,7 @@ def keep_alive():
     t.start()
 
 # --- CONFIGURATION ---
+# ใส่ Token ตรงนี้ถ้าเทสในเครื่องตัวเอง (ถ้าบน Render ให้ใช้ Environment Variable)
 TOKEN = os.environ.get('TOKEN') or 'YOUR_BOT_TOKEN_HERE'
 
 # --- DATA MANAGEMENT ---
@@ -56,20 +57,23 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 # --- UTILS ---
 def is_admin(user):
+    # 1. Check Bot Owner
     if user.id == bot.owner_id:
         return True
+    # 2. Check Manual List
     if user.id in data["admins"]:
         return True
+    # 3. Check Discord Administrator Permission
     if hasattr(user, "guild_permissions") and user.guild_permissions.administrator:
         return True
     return False
 
-# [FIXED] ฟังก์ชันนี้แก้ให้เช็คก่อนส่งข้อความ เพื่อกัน Error 40060
 async def no_permission(interaction):
+    msg = "คุณไม่มีสิทธิ์ในการใช้คำสั่ง❌"
     if interaction.response.is_done():
-        await interaction.followup.send("คุณไม่มีสิทธิ์ในการใช้คำสั่ง❌", ephemeral=True)
+        await interaction.followup.send(msg, ephemeral=True)
     else:
-        await interaction.response.send_message("คุณไม่มีสิทธิ์ในการใช้คำสั่ง❌", ephemeral=True)
+        await interaction.response.send_message(msg, ephemeral=True)
 
 # --- MODALS ---
 
@@ -81,8 +85,7 @@ class CancelReasonModal(discord.ui.Modal, title="เหตุผลการย�
         self.auction_info = auction_info
 
     async def on_submit(self, interaction: discord.Interaction):
-        # [FIXED] ใช้ defer ก่อนเพื่อกัน Time out
-        await interaction.response.defer()
+        await interaction.response.defer() # Defer to prevent timeout
         
         feedback_channel_id = data["setup"].get("feedback_channel")
         if feedback_channel_id:
@@ -124,19 +127,17 @@ class DenyReasonModal(discord.ui.Modal, title="เหตุผลไม่อน
         except:
             pass
         
-        # ลบข้อความต้นทาง (ใช้ try กัน error)
         try:
             await interaction.message.delete()
         except:
             pass
 
 class AuctionImagesModal(discord.ui.Modal, title="ข้อมูลการประมูล (2/2)"):
+    # *** แก้ไข: ลดเหลือ 3 รูป และเอาช่อง 'เพิ่มเติม' ออก เพื่อให้เหลือ 5 input พอดี ***
     img1 = discord.ui.TextInput(label="รูป 1 (ลิ้งค์) *บังคับ", required=True)
     img2 = discord.ui.TextInput(label="รูป 2 (ลิ้งค์)", required=False)
-    img3 = discord.ui.TextInput(label="รูป 3 (ลิ้งค์)", required=False)
-    img4 = discord.ui.TextInput(label="รูป 4 (ลิ้งค์)", required=False)
+    img3 = discord.ui.TextInput(label="รูป 3 (ลิ้งค์)", required=False) # เหลือ 3 รูปตามที่ขอ
     rights = discord.ui.TextInput(label="สิทธิ์", placeholder="เช่น สิทธิ์ขาด, สิทธิ์เชิงพาณิชย์", required=True)
-    extra = discord.ui.TextInput(label="เพิ่มเติม", required=False)
     end_time_input = discord.ui.TextInput(label="เวลาปิด (ชั่วโมง:นาที)", placeholder="ตัวอย่าง 14:10", required=True, max_length=5)
 
     def __init__(self, first_step_data):
@@ -151,14 +152,14 @@ class AuctionImagesModal(discord.ui.Modal, title="ข้อมูลการป
         except ValueError:
             return await interaction.response.send_message("รูปแบบเวลาไม่ถูกต้อง กรุณาใช้ HH:MM (เช่น 14:10)", ephemeral=True)
 
-        # [FIXED] Defer ก่อนประมวลผลหนัก
+        # Defer because sending embed might take time
         await interaction.response.defer(ephemeral=True)
 
         full_data = self.first_step_data
         full_data.update({
-            "images": [self.img1.value, self.img2.value, self.img3.value, self.img4.value],
+            "images": [self.img1.value, self.img2.value, self.img3.value], # อัปเดตการดึงข้อมูลรูปภาพ
             "rights": self.rights.value,
-            "extra": self.extra.value if self.extra.value else "-",
+            "extra": "-", # ลบช่องกรอกไปแล้ว เลยตั้งค่าเริ่มต้นเป็น "-"
             "end_timestamp": end_timestamp,
             "owner_id": interaction.user.id,
             "owner_name": interaction.user.name
@@ -180,7 +181,10 @@ class AuctionImagesModal(discord.ui.Modal, title="ข้อมูลการป
         embed.add_field(name="ราคาปิด (BIN)", value=f"{full_data['bin_price']} บ.", inline=True)
         embed.add_field(name="สิทธิ์", value=full_data['rights'], inline=True)
         embed.add_field(name="เวลาปิด", value=f"<t:{end_timestamp}:R>", inline=True)
-        embed.set_image(url=self.img1.value)
+        
+        # ใช้รูปแรกเป็น thumbnail ถ้ามี
+        if self.img1.value:
+            embed.set_image(url=self.img1.value)
         
         await approval_channel.send(embed=embed, view=ApprovalView(full_data))
         await interaction.followup.send("ส่งคำขอไปยังแอดมินเรียบร้อยแล้ว รอการอนุมัติ...", ephemeral=True)
@@ -206,6 +210,7 @@ class AuctionDetailsModal(discord.ui.Modal, title="ข้อมูลการ�
             "item": self.item.value
         }
         
+        # Send the next view with timeout=None
         view = ContinueSetupView(first_step_data)
         await interaction.response.send_message("กรอกข้อมูลส่วนแรกเสร็จสิ้น กดปุ่มด้านล่างเพื่อกรอกส่วนที่เหลือ", ephemeral=True, view=view)
 
@@ -224,8 +229,7 @@ class TransactionView(discord.ui.View):
         if interaction.user.id != auction["owner_id"] and not is_admin(interaction.user):
             return await no_permission(interaction)
         
-        # [FIXED] Defer
-        await interaction.response.defer()
+        await interaction.response.defer() # Defer processing
 
         feedback_channel_id = data["setup"].get("feedback_channel")
         if feedback_channel_id:
@@ -263,7 +267,6 @@ class TransactionView(discord.ui.View):
                 msg += f" <@{sup_id}>"
 
         await interaction.channel.send(msg)
-        # Check before send
         if not interaction.response.is_done():
             await interaction.response.send_message("แจ้งเตือนแอดมินเรียบร้อยแล้ว", ephemeral=True)
 
@@ -302,8 +305,8 @@ class ApprovalView(discord.ui.View):
     async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not is_admin(interaction.user):
             return await no_permission(interaction)
-
-        # [FIXED] Defer เพราะการสร้างห้องใช้เวลา
+        
+        # Defer creation process
         await interaction.response.defer(ephemeral=True)
 
         data["auction_count"] += 1
@@ -332,7 +335,6 @@ class ApprovalView(discord.ui.View):
 
 สิ่งที่ได้รับ : {self.auction_data['item']}
 สิทธิ์ : {self.auction_data['rights']}
-เพิ่มเติม : {self.auction_data['extra']}
 เวลาปิดประมูล : <t:{self.auction_data['end_timestamp']}:R>
 @everyone"""
 
@@ -369,12 +371,20 @@ class ApprovalView(discord.ui.View):
 
 class ContinueSetupView(discord.ui.View):
     def __init__(self, first_step_data):
-        super().__init__(timeout=None)
+        super().__init__(timeout=None) # Ensure View persists
         self.first_step_data = first_step_data
 
     @discord.ui.button(label="กดกรอกข้อมูล 2", style=discord.ButtonStyle.primary)
     async def step2(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(AuctionImagesModal(self.first_step_data))
+        # Cannot defer send_modal. Handle possible timeout error from Render sleep.
+        try:
+            await interaction.response.send_modal(AuctionImagesModal(self.first_step_data))
+        except discord.HTTPException as e:
+            print(f"Error opening modal: {e}")
+            try:
+                await interaction.followup.send("⚠️ ระบบกำลังทำงานช้า (Server Sleep) กรุณากดปุ่มใหม่อีกครั้งใน 10 วินาที", ephemeral=True)
+            except:
+                pass
 
 class StartAuctionView(discord.ui.View):
     def __init__(self, label):
@@ -389,7 +399,6 @@ class StartAuctionView(discord.ui.View):
 # --- LOGIC FUNCTIONS ---
 
 async def end_auction_process(channel, auction_data):
-    # Check logic to avoid repeated calls
     if str(channel.id) not in data["active_auctions"]:
         return 
 
@@ -406,7 +415,6 @@ async def end_auction_process(channel, auction_data):
         await channel.send(f"⏳ รอเวลา {lock_wait} วินาที ก่อนทำการล็อคห้อง <t:{lock_end_ts}:R>")
         await asyncio.sleep(lock_wait)
 
-    # Check if channel still exists
     try:
         await channel.send("ช่องนี้ได้เป็นช่องส่วนตัวแล้วสามารถทำธุรกรรมได้เลย...")
         
@@ -431,7 +439,7 @@ async def end_auction_process(channel, auction_data):
         """
         await channel.send(msg_text, view=TransactionView(channel.id))
     except:
-        pass # Channel might be deleted
+        pass
 
 # --- BACKGROUND TASKS ---
 
@@ -458,6 +466,7 @@ async def on_ready():
     except Exception as e:
         print(e)
     
+    # Reload Views
     if "btn_label" in data["setup"]:
         bot.add_view(StartAuctionView(data["setup"]["btn_label"]))
     bot.add_view(TransactionView(0))
@@ -534,7 +543,6 @@ async def addadmin(interaction: discord.Interaction, user: discord.User):
     if user.id not in data["admins"]:
         data["admins"].append(user.id)
         save_data(data)
-        # [FIXED] Safe check
         if not interaction.response.is_done():
             await interaction.response.send_message(f"เพิ่ม {user.mention} เป็นแอดมินเรียบร้อย ✅")
     else:
@@ -580,7 +588,7 @@ async def setup(interaction: discord.Interaction,
     if not is_admin(interaction.user):
         return await no_permission(interaction)
 
-    # [FIXED] Defer ทันที เพื่อบอก Discord ว่า "กำลังทำอยู่นะ รอแปป" (กัน Timeout)
+    # Defer to prevent timeout during setup
     await interaction.response.defer(ephemeral=True)
 
     data["setup"] = {
@@ -599,7 +607,6 @@ async def setup(interaction: discord.Interaction,
     view = StartAuctionView(btn_label)
     await channel.send(embed=embed, view=view)
     
-    # [FIXED] ใช้ followup.send เพราะเรา defer ไปแล้ว
     await interaction.followup.send("ตั้งค่าเรียบร้อยแล้ว ✅", ephemeral=True)
 
 # --- MAIN EXECUTION ---
