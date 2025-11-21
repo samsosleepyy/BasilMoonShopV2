@@ -8,7 +8,7 @@ import time
 from datetime import datetime, timedelta
 
 # --- CONFIGURATION ---
-TOKEN = 'YOUR_BOT_TOKEN_HERE' # ใส่ Token บอทของคุณที่นี่
+TOKEN = 'MTQzMjQ2MTQzNTM5MjIzMzU1NA.Go6xbb.qSenbeJCMmyvLc1Wuh4SoSQ0NaKF5HKEeioglI' # ใส่ Token บอทของคุณที่นี่
 
 # --- DATA MANAGEMENT ---
 DATA_FILE = "auction_data.json"
