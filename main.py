@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from flask import Flask
 from threading import Thread
 
-# --- KEEP ALIVE SERVER (สำหรับ Render) ---
+# --- KEEP ALIVE SERVER ---
 app = Flask('')
 
 @app.route('/')
@@ -24,7 +24,6 @@ def keep_alive():
     t.start()
 
 # --- CONFIGURATION ---
-# ใส่ Token ตรงนี้ถ้าเทสในเครื่องตัวเอง (ถ้าบน Render ให้ใช้ Environment Variable)
 TOKEN = os.environ.get('TOKEN') or 'YOUR_BOT_TOKEN_HERE'
 
 # --- DATA MANAGEMENT ---
@@ -35,7 +34,7 @@ def load_data():
         return {
             "admins": [],
             "support_ids": [],
-            "setup": {},
+            "setup": {}, # จะเก็บ noti_role ไว้ในนี้
             "auction_count": 0,
             "lock_time": 120,
             "active_auctions": {}
@@ -57,13 +56,10 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 # --- UTILS ---
 def is_admin(user):
-    # 1. Check Bot Owner
     if user.id == bot.owner_id:
         return True
-    # 2. Check Manual List
     if user.id in data["admins"]:
         return True
-    # 3. Check Discord Administrator Permission
     if hasattr(user, "guild_permissions") and user.guild_permissions.administrator:
         return True
     return False
@@ -85,7 +81,7 @@ class CancelReasonModal(discord.ui.Modal, title="เหตุผลการย�
         self.auction_info = auction_info
 
     async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.defer() # Defer to prevent timeout
+        await interaction.response.defer()
         
         feedback_channel_id = data["setup"].get("feedback_channel")
         if feedback_channel_id:
@@ -133,11 +129,11 @@ class DenyReasonModal(discord.ui.Modal, title="เหตุผลไม่อน
             pass
 
 class AuctionImagesModal(discord.ui.Modal, title="ข้อมูลการประมูล (2/2)"):
-    # *** แก้ไข: ลดเหลือ 3 รูป และเอาช่อง 'เพิ่มเติม' ออก เพื่อให้เหลือ 5 input พอดี ***
+    # Modal 5 inputs limit fix
     img1 = discord.ui.TextInput(label="รูป 1 (ลิ้งค์) *บังคับ", required=True)
     img2 = discord.ui.TextInput(label="รูป 2 (ลิ้งค์)", required=False)
-    img3 = discord.ui.TextInput(label="รูป 3 (ลิ้งค์)", required=False) # เหลือ 3 รูปตามที่ขอ
     rights = discord.ui.TextInput(label="สิทธิ์", placeholder="เช่น สิทธิ์ขาด, สิทธิ์เชิงพาณิชย์", required=True)
+    extra = discord.ui.TextInput(label="เพิ่มเติม", required=False)
     end_time_input = discord.ui.TextInput(label="เวลาปิด (ชั่วโมง:นาที)", placeholder="ตัวอย่าง 14:10", required=True, max_length=5)
 
     def __init__(self, first_step_data):
@@ -152,14 +148,13 @@ class AuctionImagesModal(discord.ui.Modal, title="ข้อมูลการป
         except ValueError:
             return await interaction.response.send_message("รูปแบบเวลาไม่ถูกต้อง กรุณาใช้ HH:MM (เช่น 14:10)", ephemeral=True)
 
-        # Defer because sending embed might take time
         await interaction.response.defer(ephemeral=True)
 
         full_data = self.first_step_data
         full_data.update({
-            "images": [self.img1.value, self.img2.value, self.img3.value], # อัปเดตการดึงข้อมูลรูปภาพ
+            "images": [self.img1.value, self.img2.value],
             "rights": self.rights.value,
-            "extra": "-", # ลบช่องกรอกไปแล้ว เลยตั้งค่าเริ่มต้นเป็น "-"
+            "extra": self.extra.value if self.extra.value else "-",
             "end_timestamp": end_timestamp,
             "owner_id": interaction.user.id,
             "owner_name": interaction.user.name
@@ -181,8 +176,8 @@ class AuctionImagesModal(discord.ui.Modal, title="ข้อมูลการป
         embed.add_field(name="ราคาปิด (BIN)", value=f"{full_data['bin_price']} บ.", inline=True)
         embed.add_field(name="สิทธิ์", value=full_data['rights'], inline=True)
         embed.add_field(name="เวลาปิด", value=f"<t:{end_timestamp}:R>", inline=True)
-        
-        # ใช้รูปแรกเป็น thumbnail ถ้ามี
+        embed.add_field(name="เพิ่มเติม", value=full_data['extra'], inline=False)
+
         if self.img1.value:
             embed.set_image(url=self.img1.value)
         
@@ -210,7 +205,6 @@ class AuctionDetailsModal(discord.ui.Modal, title="ข้อมูลการ�
             "item": self.item.value
         }
         
-        # Send the next view with timeout=None
         view = ContinueSetupView(first_step_data)
         await interaction.response.send_message("กรอกข้อมูลส่วนแรกเสร็จสิ้น กดปุ่มด้านล่างเพื่อกรอกส่วนที่เหลือ", ephemeral=True, view=view)
 
@@ -229,7 +223,7 @@ class TransactionView(discord.ui.View):
         if interaction.user.id != auction["owner_id"] and not is_admin(interaction.user):
             return await no_permission(interaction)
         
-        await interaction.response.defer() # Defer processing
+        await interaction.response.defer()
 
         feedback_channel_id = data["setup"].get("feedback_channel")
         if feedback_channel_id:
@@ -306,7 +300,6 @@ class ApprovalView(discord.ui.View):
         if not is_admin(interaction.user):
             return await no_permission(interaction)
         
-        # Defer creation process
         await interaction.response.defer(ephemeral=True)
 
         data["auction_count"] += 1
@@ -326,6 +319,10 @@ class ApprovalView(discord.ui.View):
         except Exception as e:
             return await interaction.followup.send(f"สร้างห้องไม่สำเร็จ: {e}", ephemeral=True)
 
+        # [FIXED] ตรวจสอบ Noti Role
+        noti_role_id = data["setup"].get("noti_role")
+        ping_msg = f"<@&{noti_role_id}>" if noti_role_id else "@everyone"
+
         msg_content = f"""# การประมูลครั้งที่ - {count}
 โดย <@{self.auction_data['owner_id']}>
 
@@ -335,8 +332,9 @@ class ApprovalView(discord.ui.View):
 
 สิ่งที่ได้รับ : {self.auction_data['item']}
 สิทธิ์ : {self.auction_data['rights']}
+เพิ่มเติม : {self.auction_data['extra']}
 เวลาปิดประมูล : <t:{self.auction_data['end_timestamp']}:R>
-@everyone"""
+{ping_msg}""" # ใช้ ping_msg แทน @everyone เดิม
 
         valid_images = [img for img in self.auction_data['images'] if img]
         img_str = "\n".join(valid_images)
@@ -355,7 +353,8 @@ class ApprovalView(discord.ui.View):
             "winner_id": None,
             "winner_name": None,
             "last_msg_id": None,
-            "history": [] 
+            "history": [],
+            "status": "active" # เพิ่มสถานะเพื่อเช็คว่าจบหรือยัง
         }
         save_data(data)
 
@@ -371,12 +370,11 @@ class ApprovalView(discord.ui.View):
 
 class ContinueSetupView(discord.ui.View):
     def __init__(self, first_step_data):
-        super().__init__(timeout=None) # Ensure View persists
+        super().__init__(timeout=None)
         self.first_step_data = first_step_data
 
     @discord.ui.button(label="กดกรอกข้อมูล 2", style=discord.ButtonStyle.primary)
     async def step2(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Cannot defer send_modal. Handle possible timeout error from Render sleep.
         try:
             await interaction.response.send_modal(AuctionImagesModal(self.first_step_data))
         except discord.HTTPException as e:
@@ -399,8 +397,18 @@ class StartAuctionView(discord.ui.View):
 # --- LOGIC FUNCTIONS ---
 
 async def end_auction_process(channel, auction_data):
-    if str(channel.id) not in data["active_auctions"]:
-        return 
+    cid = str(channel.id)
+    
+    # [FIXED] เช็คว่ามีข้อมูลหรือไม่ และสถานะจบไปแล้วหรือยัง
+    if cid not in data["active_auctions"]:
+        return
+    
+    if data["active_auctions"][cid].get("status") == "ended":
+        return # ถ้าจบไปแล้ว ให้หยุดทำงานทันที (กันแจ้งเตือนเบิ้ล)
+
+    # [FIXED] ตั้งสถานะเป็น ended ทันที เพื่อไม่ให้คำสั่งอื่นมาแย่งจบ
+    data["active_auctions"][cid]["status"] = "ended"
+    save_data(data)
 
     winner_id = auction_data["winner_id"]
     
@@ -445,12 +453,18 @@ async def end_auction_process(channel, auction_data):
 
 @tasks.loop(seconds=30)
 async def check_auctions_time():
+    # ลูปเช็คเวลา
     for channel_id, auction in list(data["active_auctions"].items()):
+        # [FIXED] ถ้าจบไปแล้ว ให้ข้ามไปเลย
+        if auction.get("status") == "ended":
+            continue
+
         if time.time() >= auction["end_timestamp"]:
             channel = bot.get_channel(int(channel_id))
             if channel:
                 await end_auction_process(channel, auction)
             else:
+                # ถ้าห้องหายไปแล้ว ลบข้อมูลทิ้ง
                 del data["active_auctions"][channel_id]
                 save_data(data)
 
@@ -466,7 +480,6 @@ async def on_ready():
     except Exception as e:
         print(e)
     
-    # Reload Views
     if "btn_label" in data["setup"]:
         bot.add_view(StartAuctionView(data["setup"]["btn_label"]))
     bot.add_view(TransactionView(0))
@@ -477,7 +490,8 @@ async def on_message(message):
 
     channel_id = str(message.channel.id)
     
-    if channel_id in data["active_auctions"]:
+    # เช็คว่าเป็นห้องประมูล และยังไม่จบ (Status != ended)
+    if channel_id in data["active_auctions"] and data["active_auctions"][channel_id].get("status") != "ended":
         auction = data["active_auctions"][channel_id]
         content = message.content.strip()
         
@@ -494,8 +508,7 @@ async def on_message(message):
             min_next = current + step if len(auction["history"]) > 0 else current
             
             if amount < min_next: 
-                 await message.channel.send("ราคาที่คุณบิดต่ำเกินไป❌", delete_after=5)
-                 await message.delete()
+                 await message.reply("ราคาที่คุณบิดต่ำเกินไป❌", delete_after=10)
                  return
 
             prev_winner_id = auction["winner_id"]
@@ -504,8 +517,6 @@ async def on_message(message):
             auction["winner_id"] = message.author.id
             auction["winner_name"] = message.author.name
             auction["history"].append({"user": message.author.id, "price": amount})
-            
-            await message.delete()
             
             if auction["last_msg_id"]:
                 try:
@@ -518,7 +529,8 @@ async def on_message(message):
             if prev_winner_id and prev_winner_id != message.author.id:
                 msg_text += f"\n<@{prev_winner_id}> ถูกแซงแล้ว!"
             
-            new_msg = await message.channel.send(msg_text)
+            new_msg = await message.reply(msg_text)
+            
             auction["last_msg_id"] = new_msg.id
             save_data(data)
 
@@ -534,6 +546,17 @@ async def on_message(message):
     await bot.process_commands(message)
 
 # --- COMMANDS ---
+
+@bot.tree.command(name="noti", description="ตั้งค่าบทบาทที่จะแจ้งเตือนเมื่อเปิดประมูล (แทนที่ @everyone)")
+async def noti(interaction: discord.Interaction, role: discord.Role):
+    if not is_admin(interaction.user):
+        return await no_permission(interaction)
+    
+    # บันทึก ID ของ Role ลงใน setup
+    data["setup"]["noti_role"] = role.id
+    save_data(data)
+    
+    await interaction.response.send_message(f"ตั้งค่าแจ้งเตือนเป็น {role.mention} เรียบร้อยแล้ว ✅", ephemeral=True)
 
 @bot.tree.command(name="addadmin", description="เพิ่มสมาชิกที่จะสามารถใช้คำสั่งแอดมินได้")
 async def addadmin(interaction: discord.Interaction, user: discord.User):
@@ -588,7 +611,6 @@ async def setup(interaction: discord.Interaction,
     if not is_admin(interaction.user):
         return await no_permission(interaction)
 
-    # Defer to prevent timeout during setup
     await interaction.response.defer(ephemeral=True)
 
     data["setup"] = {
@@ -596,7 +618,8 @@ async def setup(interaction: discord.Interaction,
         "channel_id": channel.id,
         "approval_channel": approval_channel.id,
         "feedback_channel": feedback_channel.id if feedback_channel else None,
-        "btn_label": btn_label
+        "btn_label": btn_label,
+        "noti_role": data["setup"].get("noti_role") # รักษาค่า noti เดิมถ้ามี
     }
     save_data(data)
 
