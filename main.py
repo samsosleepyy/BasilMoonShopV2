@@ -484,9 +484,9 @@ class InfoSelectView(discord.ui.View):
         selected_value = interaction.data['values'][0]
         
         if selected_value == "option1":
-            response_text = f"## 🎁 ข้อมูลเพิ่มเติม: {self.data['select_label1']}\n\n{self.data['info1']}"
+            response_text = f"## 📰 ข้อมูล: {self.data['select_label1']}\n\n{self.data['info1']}"
         elif selected_value == "option2":
-            response_text = f"## 🎁 ข้อมูลเพิ่มเติม: {self.data['select_label2']}\n\n{self.data['info2']}"
+            response_text = f"## 📰 ข้อมูล: {self.data['select_label2']}\n\n{self.data['info2']}"
         else:
             response_text = "❌ ไม่มีข้อมูลสำหรับตัวเลือกนี้"
             
