@@ -29,6 +29,10 @@ TOKEN = os.environ.get('TOKEN') or 'YOUR_BOT_TOKEN_HERE'
 # --- DATA MANAGEMENT ---
 DATA_FILE = "auction_data.json"
 
+# ตัวแปรชั่วคราวสำหรับเก็บข้อมูลระหว่างรออัปโหลดรูป (RAM Only)
+# Format: {user_id: {data_dict}}
+pending_auctions = {}
+
 def load_data():
     if not os.path.exists(DATA_FILE):
         return {
@@ -70,6 +74,35 @@ async def no_permission(interaction):
         await interaction.followup.send(msg, ephemeral=True)
     else:
         await interaction.response.send_message(msg, ephemeral=True)
+
+# --- LOGIC FUNCTIONS (MOVED UP) ---
+
+async def submit_to_approval(guild, full_data):
+    # ฟังก์ชันส่งข้อมูลไปช่องอนุมัติ (ใช้ร่วมกันหลังอัปรูปเสร็จ)
+    approval_channel_id = data["setup"].get("approval_channel")
+    if not approval_channel_id:
+        return None # Config error
+    
+    approval_channel = guild.get_channel(approval_channel_id)
+    if not approval_channel:
+        return None
+
+    embed = discord.Embed(title="คำขอเปิดประมูลใหม่", color=discord.Color.orange())
+    embed.set_author(name=full_data['owner_name'], icon_url=None)
+    embed.add_field(name="สินค้า", value=full_data['item'], inline=False)
+    embed.add_field(name="ราคาเริ่มต้น", value=f"{full_data['start_price']} บ.", inline=True)
+    embed.add_field(name="บิดขั้นต่ำ", value=f"{full_data['bid_step']} บ.", inline=True)
+    embed.add_field(name="ราคาปิด (BIN)", value=f"{full_data['bin_price']} บ.", inline=True)
+    embed.add_field(name="สิทธิ์", value=full_data['rights'], inline=True)
+    embed.add_field(name="เวลาปิด", value=f"<t:{full_data['end_timestamp']}:R>", inline=True)
+    embed.add_field(name="เพิ่มเติม", value=full_data['extra'], inline=False)
+
+    # ใช้รูปแรกเป็น Cover
+    if full_data['images'] and len(full_data['images']) > 0:
+        embed.set_image(url=full_data['images'][0])
+    
+    await approval_channel.send(embed=embed, view=ApprovalView(full_data))
+    return True
 
 # --- MODALS ---
 
@@ -123,8 +156,7 @@ class DenyReasonModal(discord.ui.Modal, title="เหตุผลไม่อน
             pass
 
 class AuctionImagesModal(discord.ui.Modal, title="ข้อมูลการประมูล (2/2)"):
-    img1 = discord.ui.TextInput(label="รูป 1 (ลิ้งค์) *บังคับ", required=True)
-    img2 = discord.ui.TextInput(label="รูป 2 (ลิ้งค์)", required=False)
+    # [แก้ไข] ลบช่องใส่รูปออก เหลือแค่ข้อมูลอื่น
     rights = discord.ui.TextInput(label="สิทธิ์", placeholder="เช่น สิทธิ์ขาด, สิทธิ์เชิงพาณิชย์", required=True)
     extra = discord.ui.TextInput(label="เพิ่มเติม", required=False)
     end_time_input = discord.ui.TextInput(label="เวลาปิด (ชั่วโมง:นาที)", placeholder="ตัวอย่าง 14:10", required=True, max_length=5)
@@ -143,39 +175,47 @@ class AuctionImagesModal(discord.ui.Modal, title="ข้อมูลการป
 
         await interaction.response.defer(ephemeral=True)
 
+        # รวมข้อมูล
         full_data = self.first_step_data
         full_data.update({
-            "images": [self.img1.value, self.img2.value],
             "rights": self.rights.value,
             "extra": self.extra.value if self.extra.value else "-",
             "end_timestamp": end_timestamp,
             "owner_id": interaction.user.id,
-            "owner_name": interaction.user.name
+            "owner_name": interaction.user.name,
+            "images": [] # รอใส่รูป
         })
 
-        approval_channel_id = data["setup"].get("approval_channel")
-        if not approval_channel_id:
-            return await interaction.followup.send("ยังไม่ได้ตั้งค่าช่องอนุมัติ", ephemeral=True)
+        # ตรวจสอบว่ามีการตั้งค่าช่องอัปโหลดรูปไหม
+        img_channel_id = data["setup"].get("image_channel")
+        if not img_channel_id:
+            return await interaction.followup.send("❌ ระบบยังไม่ได้ตั้งค่าช่องอัปโหลดรูป (/imagec)", ephemeral=True)
         
-        approval_channel = interaction.guild.get_channel(approval_channel_id)
-        if not approval_channel:
-            return await interaction.followup.send("หาช่องอนุมัติไม่เจอ", ephemeral=True)
+        img_channel = interaction.guild.get_channel(img_channel_id)
+        if not img_channel:
+            return await interaction.followup.send("❌ หาช่องอัปโหลดรูปไม่เจอ", ephemeral=True)
 
-        embed = discord.Embed(title="คำขอเปิดประมูลใหม่", color=discord.Color.orange())
-        embed.set_author(name=interaction.user.name, icon_url=interaction.user.avatar.url if interaction.user.avatar else None)
-        embed.add_field(name="สินค้า", value=full_data['item'], inline=False)
-        embed.add_field(name="ราคาเริ่มต้น", value=f"{full_data['start_price']} บ.", inline=True)
-        embed.add_field(name="บิดขั้นต่ำ", value=f"{full_data['bid_step']} บ.", inline=True)
-        embed.add_field(name="ราคาปิด (BIN)", value=f"{full_data['bin_price']} บ.", inline=True)
-        embed.add_field(name="สิทธิ์", value=full_data['rights'], inline=True)
-        embed.add_field(name="เวลาปิด", value=f"<t:{end_timestamp}:R>", inline=True)
-        embed.add_field(name="เพิ่มเติม", value=full_data['extra'], inline=False)
+        # 1. บันทึกข้อมูลลงตัวแปรชั่วคราว (Pending)
+        pending_auctions[interaction.user.id] = full_data
 
-        if self.img1.value:
-            embed.set_image(url=self.img1.value)
+        # 2. เปิดสิทธิ์ให้ผู้ใช้เห็นช่อง (Allow User)
+        overwrite = discord.PermissionOverwrite(
+            view_channel=True,
+            send_messages=True,
+            attach_files=True,
+            read_message_history=True
+            # Others are False/Inherit
+        )
+        await img_channel.set_permissions(interaction.user, overwrite=overwrite)
+
+        # 3. แจ้งเตือนผู้ใช้
+        await interaction.followup.send(f"กรุณาส่งรูปภาพสินค้าที่ช่อง : {img_channel.mention} (ส่งได้หลายรูปใน 1 ข้อความ)", ephemeral=True)
         
-        await approval_channel.send(embed=embed, view=ApprovalView(full_data))
-        await interaction.followup.send("ส่งคำขอไปยังแอดมินเรียบร้อยแล้ว รอการอนุมัติ...", ephemeral=True)
+        # ส่งข้อความ Tag ในช่องรูปภาพเพื่อให้รู้ง่ายๆ
+        try:
+            await img_channel.send(f"<@{interaction.user.id}> กรุณาส่งรูปสินค้าของคุณที่นี่...")
+        except:
+            pass
 
 class AuctionDetailsModal(discord.ui.Modal, title="ข้อมูลการประมูล (1/2)"):
     start_price = discord.ui.TextInput(label="ราคาเริ่มต้น", placeholder="ใส่แค่ตัวเลข", required=True)
@@ -402,7 +442,6 @@ async def end_auction_process(channel, auction_data):
 
     winner_id = auction_data["winner_id"]
     
-    # กรณีไม่มีผู้ชนะ
     if not winner_id:
         await channel.send("# ปิดประมูล (ไม่มีผู้ชนะ)")
         
@@ -422,8 +461,7 @@ async def end_auction_process(channel, auction_data):
         save_data(data)
         return
 
-    # กรณีมีผู้ชนะ
-    await channel.send(f"# <@{winner_id}> ชนะการประมูลครั้งที่ : {auction_data['count']}")
+    await channel.send(f"# <@{winner_id}> ชนะการประมูลครั้งที่ : {auction_data['count']}\n### จบที่ราคา : {auction_data['current_price']} บ.")
 
     lock_wait = data.get("lock_time", 120)
     if lock_wait > 0:
@@ -434,26 +472,75 @@ async def end_auction_process(channel, auction_data):
     try:
         await channel.send("ช่องนี้ได้เป็นช่องส่วนตัวแล้วสามารถทำธุรกรรมได้เลย...")
         
-        # [FIXED] ปรับปรุงการล็อคห้อง: ปิดทุกบทบาท ยกเว้น Admin
         overwrites = {}
 
-        # 1. ปิดการมองเห็นสำหรับทุกบทบาท (ยกเว้น Admin)
+        # DENY ALL
+        deny_all = discord.PermissionOverwrite(
+            view_channel=False,
+            read_messages=False,
+            read_message_history=False,
+            send_messages=False,
+            send_tts_messages=False,
+            manage_messages=False,
+            embed_links=False,
+            attach_files=False,
+            mention_everyone=False,
+            use_external_emojis=False,
+            add_reactions=False,
+            use_application_commands=False,
+            manage_channels=False,
+            manage_permissions=False,
+            manage_webhooks=False,
+            create_instant_invite=False,
+            create_public_threads=False,
+            create_private_threads=False,
+            send_messages_in_threads=False,
+            manage_threads=False
+        )
+
+        # 1. ปิดกั้นทุกบทบาท
         for role in channel.guild.roles:
             if role.permissions.administrator:
-                continue # แอดมินจะมองเห็นได้อยู่แล้วโดยสิทธิ์ระดับสูง
-            overwrites[role] = discord.PermissionOverwrite(view_channel=False)
+                continue
+            overwrites[role] = deny_all
 
         # 2. อนุญาตบอท
         overwrites[channel.guild.me] = discord.PermissionOverwrite(view_channel=True)
         
-        # 3. อนุญาตเจ้าของ
+        # 3. Strict Allow for User
+        strict_allow = discord.PermissionOverwrite(
+            view_channel=True,
+            read_message_history=True,
+            send_messages=True,
+            attach_files=True,
+            embed_links=True,
+            add_reactions=True,
+            create_instant_invite=False,
+            manage_channels=False,
+            manage_permissions=False,
+            manage_webhooks=False,
+            create_public_threads=False,
+            create_private_threads=False,
+            send_messages_in_threads=False,
+            send_tts_messages=False,
+            manage_messages=False,
+            mention_everyone=False,
+            use_external_emojis=False,
+            use_application_commands=False,
+            manage_threads=False,
+            use_external_stickers=False
+        )
+
+        # 4. อนุญาตเจ้าของ
         owner = channel.guild.get_member(auction_data["owner_id"])
-        if owner: overwrites[owner] = discord.PermissionOverwrite(view_channel=True)
+        if owner: 
+            overwrites[owner] = strict_allow
         
-        # 4. อนุญาตผู้ชนะ
+        # 5. อนุญาตผู้ชนะ
         if winner_id:
             winner = channel.guild.get_member(winner_id)
-            if winner: overwrites[winner] = discord.PermissionOverwrite(view_channel=True)
+            if winner: 
+                overwrites[winner] = strict_allow
         
         await channel.edit(overwrites=overwrites)
         
@@ -463,8 +550,8 @@ async def end_auction_process(channel, auction_data):
 ปุ่มสีแดง ❌ เป็นของผู้เปิดประมูลและแอดมิน
         """
         await channel.send(msg_text, view=TransactionView(channel.id))
-    except:
-        pass
+    except Exception as e:
+        print(f"Error locking channel: {e}")
 
 # --- BACKGROUND TASKS ---
 
@@ -501,6 +588,35 @@ async def on_ready():
 @bot.event
 async def on_message(message):
     if message.author.bot: return
+
+    # ------------------------------------------------
+    # [NEW] ตรวจจับการอัปรูปในช่อง Image Channel
+    # ------------------------------------------------
+    img_channel_id = data["setup"].get("image_channel")
+    if img_channel_id and message.channel.id == img_channel_id:
+        # เช็คว่าเป็นผู้ใช้ที่กำลังรอส่งรูปหรือไม่
+        if message.author.id in pending_auctions:
+            # เช็คว่ามีรูปไหม
+            if message.attachments:
+                # เอาข้อมูลที่จำไว้มาใช้
+                full_data = pending_auctions[message.author.id]
+                
+                # บันทึกลิ้งค์รูป
+                for attachment in message.attachments:
+                    full_data["images"].append(attachment.url)
+                
+                # ส่งไปอนุมัติ
+                await message.channel.send("ได้รับรูปภาพแล้ว กำลังส่งคำขออนุมัติ... ✅", delete_after=5)
+                await submit_to_approval(message.guild, full_data)
+                
+                # ลบผู้ใช้ออกจาก pending และลบสิทธิ์ออกจากช่อง
+                del pending_auctions[message.author.id]
+                await message.channel.set_permissions(message.author, overwrite=None)
+                
+                return # จบการทำงาน
+            else:
+                # ถ้าผู้ใช้พิมข้อความมาแต่ไม่มีรูป
+                return # ปล่อยผ่าน หรือจะแจ้งเตือนก็ได้
 
     channel_id = str(message.channel.id)
     
@@ -560,6 +676,38 @@ async def on_message(message):
 
 # --- COMMANDS ---
 
+@bot.tree.command(name="imagec", description="ตั้งค่าช่องสำหรับอัปโหลดรูปภาพ")
+async def imagec(interaction: discord.Interaction, channel: discord.TextChannel):
+    if not is_admin(interaction.user):
+        return await no_permission(interaction)
+    
+    # บันทึก ID ช่อง
+    data["setup"]["image_channel"] = channel.id
+    save_data(data)
+
+    # ล็อคช่องไม่ให้ใครเห็น (นอกจาก Admin)
+    overwrites = {
+        interaction.guild.default_role: discord.PermissionOverwrite(view_channel=False)
+    }
+    # ไล่ปิด Role อื่นๆ ด้วยเผื่อเหนียว
+    for role in interaction.guild.roles:
+        if role.permissions.administrator:
+            continue
+        overwrites[role] = discord.PermissionOverwrite(view_channel=False)
+    
+    await channel.edit(overwrites=overwrites)
+
+    await interaction.response.send_message(f"ตั้งค่าช่องอัปโหลดรูปเป็น {channel.mention} และล็อคช่องเรียบร้อยแล้ว ✅", ephemeral=True)
+
+@bot.tree.command(name="resetdata", description="รีเซ็ตจำนวนครั้งการประมูลกลับเป็น 0")
+async def resetdata(interaction: discord.Interaction):
+    if not is_admin(interaction.user):
+        return await no_permission(interaction)
+    
+    data["auction_count"] = 0
+    save_data(data)
+    await interaction.response.send_message("รีเซ็ตจำนวนครั้งการประมูลเรียบร้อยแล้ว (ครั้งถัดไปจะเริ่มที่ 1) ✅", ephemeral=True)
+
 @bot.tree.command(name="noti", description="ตั้งค่าบทบาทที่จะแจ้งเตือนเมื่อเปิดประมูล (แทนที่ @everyone)")
 async def noti(interaction: discord.Interaction, role: discord.Role):
     if not is_admin(interaction.user):
@@ -616,7 +764,7 @@ async def setup(interaction: discord.Interaction,
                 channel: discord.TextChannel, 
                 message: str, 
                 approval_channel: discord.TextChannel, 
-                feedback_channel: discord.TextChannel = None,
+                feedback_channel: discord.TextChannel = None, 
                 btn_label: str = "💰 เปิดประมูล", 
                 img_url: str = None):
     
@@ -631,7 +779,8 @@ async def setup(interaction: discord.Interaction,
         "approval_channel": approval_channel.id,
         "feedback_channel": feedback_channel.id if feedback_channel else None,
         "btn_label": btn_label,
-        "noti_role": data["setup"].get("noti_role")
+        "noti_role": data["setup"].get("noti_role"),
+        "image_channel": data["setup"].get("image_channel") # คงค่าเดิมถ้ามี
     }
     save_data(data)
 
