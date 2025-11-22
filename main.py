@@ -452,7 +452,66 @@ class StartAuctionView(discord.ui.View):
             await interaction.response.send_modal(AuctionDetailsModal())
         return True
 
-# --- LOGIC FUNCTIONS ---
+# --- NEW INFO COMMAND VIEWS ---
+
+class InfoSelectView(discord.ui.View):
+    def __init__(self, data):
+        super().__init__(timeout=None)
+        # ข้อมูลสำหรับส่งกลับ
+        self.data = data
+        
+        # --- สร้าง Select Menu ---
+        select = discord.ui.Select(
+            placeholder=data['select_placeholder'],
+            options=[
+                discord.SelectOption(
+                    label=data['select_label1'],
+                    value="option1",
+                    description=f"ข้อมูลเกี่ยวกับ {data['select_label1']}"
+                ),
+                discord.SelectOption(
+                    label=data['select_label2'],
+                    value="option2",
+                    description=f"ข้อมูลเกี่ยวกับ {data['select_label2']}"
+                )
+            ],
+            custom_id="info_select_menu"
+        )
+        select.callback = self.select_callback # กำหนด callback ให้ฟังก์ชันด้านล่าง
+        self.add_item(select)
+    
+    async def select_callback(self, interaction: discord.Interaction):
+        selected_value = interaction.data['values'][0]
+        
+        if selected_value == "option1":
+            response_text = f"## 🎁 ข้อมูลเพิ่มเติม: {self.data['select_label1']}\n\n{self.data['info1']}"
+        elif selected_value == "option2":
+            response_text = f"## 🎁 ข้อมูลเพิ่มเติม: {self.data['select_label2']}\n\n{self.data['info2']}"
+        else:
+            response_text = "❌ ไม่มีข้อมูลสำหรับตัวเลือกนี้"
+            
+        # ส่งข้อความตอบกลับแบบส่วนตัว (Ephemeral)
+        await interaction.response.send_message(response_text, ephemeral=True)
+
+
+class InfoButtonView(discord.ui.View):
+    def __init__(self, data):
+        super().__init__(timeout=None)
+        self.data = data
+
+    @discord.ui.button(label=data['button_label'], style=discord.ButtonStyle.primary, custom_id="open_info_select_btn")
+    async def open_info(self, interaction: discord.Interaction, button: discord.ui.Button):
+        
+        select_view = InfoSelectView(self.data)
+        
+        # ตอบกลับด้วย Select Menu ใหม่ โดยส่งแบบ ephemeral เพื่อไม่ให้เกะกะ
+        await interaction.response.send_message(
+            f"✅ **กรุณาเลือกตัวเลือก:**", 
+            view=select_view, 
+            ephemeral=True
+        )
+
+# --- LOGIC FUNCTIONS (Continued) ---
 
 async def end_auction_process(channel, auction_data):
     cid = str(channel.id)
@@ -609,7 +668,10 @@ async def on_ready():
     
     if "btn_label" in data["setup"]:
         bot.add_view(StartAuctionView(data["setup"]["btn_label"]))
-    bot.add_view(TransactionView(0))
+    # ต้อง add view ของ TransactionView และ InfoSelectView/InfoButtonView ถ้ามีการใช้ custom_id 
+    # ในกรณีนี้เราไม่ได้ใช้ custom_id แบบคงที่ใน InfoSelectView และ InfoButtonView ที่มีการส่ง data
+    # จึงไม่ต้อง add_view ตรงนี้ แต่ต้องทำให้โค้ดทำงานได้แม้บอทรีสตาร์ท (ซึ่งอาจต้องเปลี่ยนไปใช้ persistent views)
+    bot.add_view(TransactionView(0)) # เพิ่มไว้เพื่อดักปุ่ม Transaction
 
 @bot.event
 async def on_message(message):
@@ -712,6 +774,54 @@ async def on_message(message):
     await bot.process_commands(message)
 
 # --- COMMANDS ---
+
+@bot.tree.command(name="info", description="สร้างข้อความพร้อมปุ่มเมนูสำหรับแสดงข้อมูลเฉพาะผู้ใช้")
+@app_commands.describe(
+    channel="ช่องที่จะส่งข้อความไป",
+    message="ข้อความหลัก",
+    button_label="ข้อความปุ่มสำหรับเปิด Select (เช่น กดเพื่อดูข้อมูล)",
+    select_placeholder="ข้อความที่แสดงในช่องเลือก (เช่น เลือกหัวข้อที่ต้องการ)",
+    select_label1="ข้อความปุ่มตัวเลือกที่ 1 (เช่น วิธีการสั่ง)",
+    select_label2="ข้อความปุ่มตัวเลือกที่ 2 (เช่น อัตราค่าบริการ)",
+    info1="รายละเอียดที่จะแสดงเฉพาะผู้ใช้เมื่อเลือกตัวเลือก 1",
+    info2="รายละเอียดที่จะแสดงเฉพาะผู้ใช้เมื่อเลือกตัวเลือก 2"
+)
+async def info_cmd(
+    interaction: discord.Interaction, 
+    channel: discord.TextChannel, 
+    message: str, 
+    button_label: str,
+    select_placeholder: str,
+    select_label1: str,
+    select_label2: str,
+    info1: str,
+    info2: str
+):
+    if not is_admin(interaction.user):
+        return await no_permission(interaction)
+
+    await interaction.response.defer(ephemeral=True)
+    
+    # รวมข้อมูลสำหรับส่งให้ View
+    info_data = {
+        "button_label": button_label,
+        "select_placeholder": select_placeholder,
+        "select_label1": select_label1,
+        "select_label2": select_label2,
+        "info1": info1,
+        "info2": info2
+    }
+
+    # สร้าง View ที่มีปุ่มเริ่มต้น
+    view = InfoButtonView(info_data)
+
+    # ส่งข้อความหลักพร้อมปุ่มเริ่มต้นไปยังช่องที่กำหนด
+    try:
+        await channel.send(message, view=view)
+        await interaction.followup.send(f"ส่งข้อความพร้อมปุ่มไปยัง {channel.mention} เรียบร้อยแล้ว ✅", ephemeral=True)
+    except Exception as e:
+        await interaction.followup.send(f"❌ เกิดข้อผิดพลาดในการส่งข้อความ: {e}", ephemeral=True)
+
 
 @bot.tree.command(name="imagec", description="ตั้งค่าช่องสำหรับอัปโหลดรูปภาพ")
 async def imagec(interaction: discord.Interaction, channel: discord.TextChannel):
