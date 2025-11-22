@@ -116,8 +116,6 @@ class DenyReasonModal(discord.ui.Modal, title="เหตุผลไม่อน
             channel = interaction.guild.get_channel(feedback_channel_id)
             if channel:
                 await channel.send(f"🚫 ไม่อนุมัติการประมูลของ <@{self.owner_id}>\nเหตุผล: {self.reason.value}")
-
-        # [แก้ไข] ลบส่วนที่ส่ง DM หาผู้ใช้ออกแล้ว
         
         try:
             await interaction.message.delete()
@@ -399,18 +397,15 @@ async def end_auction_process(channel, auction_data):
     if data["active_auctions"][cid].get("status") == "ended":
         return 
 
-    # Set status first
     data["active_auctions"][cid]["status"] = "ended"
     save_data(data)
 
     winner_id = auction_data["winner_id"]
     
-    # [แก้ไข] กรณีไม่มีผู้ชนะ
+    # กรณีไม่มีผู้ชนะ
     if not winner_id:
-        # 1. แจ้งเตือนในห้องประมูลว่าไม่มีคน
         await channel.send("# ปิดประมูล (ไม่มีผู้ชนะ)")
         
-        # 2. ส่ง Feedback
         feedback_channel_id = data["setup"].get("feedback_channel")
         if feedback_channel_id:
             feed_channel = channel.guild.get_channel(feedback_channel_id)
@@ -421,35 +416,41 @@ async def end_auction_process(channel, auction_data):
                 embed.add_field(name="สถานะ", value="ไม่มีผู้ประมูล")
                 await feed_channel.send(embed=embed)
         
-        # 3. ลบห้องทันที (รอ 5 วินาทีเพื่อให้เห็นข้อความปิดนิดนึง)
         await asyncio.sleep(5)
         await channel.delete()
-        
-        # 4. ลบข้อมูล
         del data["active_auctions"][cid]
         save_data(data)
         return
 
-    # กรณีมีผู้ชนะ ทำงานต่อปกติ
+    # กรณีมีผู้ชนะ
     await channel.send(f"# <@{winner_id}> ชนะการประมูลครั้งที่ : {auction_data['count']}")
 
     lock_wait = data.get("lock_time", 120)
     if lock_wait > 0:
         lock_end_ts = int(time.time() + lock_wait)
-        await channel.send(f"⏳ สามารถพูดคุยกันได้ {lock_wait} วินาที ก่อนทำการล็อคห้อง <t:{lock_end_ts}:R>")
+        await channel.send(f"⏳ รอเวลา {lock_wait} วินาที ก่อนทำการล็อคห้อง <t:{lock_end_ts}:R>")
         await asyncio.sleep(lock_wait)
 
     try:
         await channel.send("ช่องนี้ได้เป็นช่องส่วนตัวแล้วสามารถทำธุรกรรมได้เลย...")
         
-        overwrites = {
-            channel.guild.default_role: discord.PermissionOverwrite(view_channel=False),
-            channel.guild.me: discord.PermissionOverwrite(view_channel=True),
-        }
+        # [FIXED] ปรับปรุงการล็อคห้อง: ปิดทุกบทบาท ยกเว้น Admin
+        overwrites = {}
+
+        # 1. ปิดการมองเห็นสำหรับทุกบทบาท (ยกเว้น Admin)
+        for role in channel.guild.roles:
+            if role.permissions.administrator:
+                continue # แอดมินจะมองเห็นได้อยู่แล้วโดยสิทธิ์ระดับสูง
+            overwrites[role] = discord.PermissionOverwrite(view_channel=False)
+
+        # 2. อนุญาตบอท
+        overwrites[channel.guild.me] = discord.PermissionOverwrite(view_channel=True)
         
+        # 3. อนุญาตเจ้าของ
         owner = channel.guild.get_member(auction_data["owner_id"])
         if owner: overwrites[owner] = discord.PermissionOverwrite(view_channel=True)
         
+        # 4. อนุญาตผู้ชนะ
         if winner_id:
             winner = channel.guild.get_member(winner_id)
             if winner: overwrites[winner] = discord.PermissionOverwrite(view_channel=True)
