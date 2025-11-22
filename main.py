@@ -455,24 +455,24 @@ class StartAuctionView(discord.ui.View):
 # --- NEW INFO COMMAND VIEWS ---
 
 class InfoSelectView(discord.ui.View):
-    def __init__(self, data):
+    # ⚠️ ปรับให้รับ info_data ตรงๆ แทนที่จะรับ data เพื่อให้ส่งเข้า __init__ ได้
+    def __init__(self, info_data):
         super().__init__(timeout=None)
-        # ข้อมูลสำหรับส่งกลับ
-        self.data = data
+        self.data = info_data
         
         # --- สร้าง Select Menu ---
         select = discord.ui.Select(
-            placeholder=data['select_placeholder'],
+            placeholder=info_data['select_placeholder'],
             options=[
                 discord.SelectOption(
-                    label=data['select_label1'],
+                    label=info_data['select_label1'],
                     value="option1",
-                    description=f"ข้อมูลเกี่ยวกับ {data['select_label1']}"
+                    description=f"ข้อมูลเกี่ยวกับ {info_data['select_label1']}"
                 ),
                 discord.SelectOption(
-                    label=data['select_label2'],
+                    label=info_data['select_label2'],
                     value="option2",
-                    description=f"ข้อมูลเกี่ยวกับ {data['select_label2']}"
+                    description=f"ข้อมูลเกี่ยวกับ {info_data['select_label2']}"
                 )
             ],
             custom_id="info_select_menu"
@@ -494,34 +494,7 @@ class InfoSelectView(discord.ui.View):
         await interaction.response.send_message(response_text, ephemeral=True)
 
 
-class InfoButtonView(discord.ui.View):
-    def __init__(self, data):
-        super().__init__(timeout=None)
-        self.data = data
-
-        # 🟢 แก้ไข: สร้างปุ่ม
-        button = discord.ui.Button(
-            label=data['button_label'], 
-            style=discord.ButtonStyle.primary, 
-            custom_id="open_info_select_btn"
-        )
-        
-        # ⚠️ กำหนด callback ของปุ่มโดยตรงไปยังเมธอด open_info
-        button.callback = self.open_info
-        
-        self.add_item(button)
-
-    # 🛑 ไม่ใช้ Decorator
-    async def open_info(self, interaction: discord.Interaction): # รับแค่ interaction
-        # เมธอดนี้ถูกเรียกใช้ผ่าน callback
-        select_view = InfoSelectView(self.data)
-        
-        # ตอบกลับด้วย Select Menu ใหม่ โดยส่งแบบ ephemeral เพื่อไม่ให้เกะกะ
-        await interaction.response.send_message(
-            f"✅ **กรุณาเลือกตัวเลือก:**", 
-            view=select_view, 
-            ephemeral=True
-        )
+# 🛑 ลบคลาส InfoButtonView ออก
 
 
 # --- LOGIC FUNCTIONS (Continued) ---
@@ -786,11 +759,11 @@ async def on_message(message):
 
 # --- COMMANDS ---
 
-@bot.tree.command(name="info", description="สร้างข้อความพร้อมปุ่มเมนูสำหรับแสดงข้อมูลเฉพาะผู้ใช้")
+@bot.tree.command(name="info", description="สร้างข้อความพร้อม Select Menu สำหรับแสดงข้อมูลเฉพาะผู้ใช้")
 @app_commands.describe(
     channel="ช่องที่จะส่งข้อความไป",
     message="ข้อความหลัก",
-    button_label="ข้อความปุ่มสำหรับเปิด Select (เช่น กดเพื่อดูข้อมูล)",
+    # 🛑 ลบ button_label
     select_placeholder="ข้อความที่แสดงในช่องเลือก (เช่น เลือกหัวข้อที่ต้องการ)",
     select_label1="ข้อความปุ่มตัวเลือกที่ 1 (เช่น วิธีการสั่ง)",
     select_label2="ข้อความปุ่มตัวเลือกที่ 2 (เช่น อัตราค่าบริการ)",
@@ -801,7 +774,7 @@ async def info_cmd(
     interaction: discord.Interaction, 
     channel: discord.TextChannel, 
     message: str, 
-    button_label: str,
+    # 🛑 ลบ button_label: str ออก
     select_placeholder: str,
     select_label1: str,
     select_label2: str,
@@ -815,7 +788,6 @@ async def info_cmd(
     
     # รวมข้อมูลสำหรับส่งให้ View
     info_data = {
-        "button_label": button_label,
         "select_placeholder": select_placeholder,
         "select_label1": select_label1,
         "select_label2": select_label2,
@@ -823,13 +795,13 @@ async def info_cmd(
         "info2": info2
     }
 
-    # สร้าง View ที่มีปุ่มเริ่มต้น
-    view = InfoButtonView(info_data)
+    # 🟢 สร้าง View ที่เป็น Select Menu ทันที
+    view = InfoSelectView(info_data)
 
-    # ส่งข้อความหลักพร้อมปุ่มเริ่มต้นไปยังช่องที่กำหนด
+    # ส่งข้อความหลักพร้อม Select Menu ไปยังช่องที่กำหนด
     try:
         await channel.send(message, view=view)
-        await interaction.followup.send(f"ส่งข้อความพร้อมปุ่มไปยัง {channel.mention} เรียบร้อยแล้ว ✅", ephemeral=True)
+        await interaction.followup.send(f"ส่งข้อความพร้อม Select Menu ไปยัง {channel.mention} เรียบร้อยแล้ว ✅", ephemeral=True)
     except Exception as e:
         await interaction.followup.send(f"❌ เกิดข้อผิดพลาดในการส่งข้อความ: {e}", ephemeral=True)
 
