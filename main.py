@@ -499,9 +499,18 @@ class InfoButtonView(discord.ui.View):
         super().__init__(timeout=None)
         self.data = data
 
-    @discord.ui.button(label=data['button_label'], style=discord.ButtonStyle.primary, custom_id="open_info_select_btn")
+        # 🟢 แก้ไข: ย้ายการสร้างปุ่มมาที่ __init__
+        self.add_item(
+            discord.ui.Button(
+                label=data['button_label'], 
+                style=discord.ButtonStyle.primary, 
+                custom_id="open_info_select_btn"
+            )
+        )
+
+    # 🛑 ลบ @discord.ui.button(...) ที่อยู่ด้านบนออก
     async def open_info(self, interaction: discord.Interaction, button: discord.ui.Button):
-        
+        # เมธอดนี้ถูกเรียกใช้ผ่าน callback
         select_view = InfoSelectView(self.data)
         
         # ตอบกลับด้วย Select Menu ใหม่ โดยส่งแบบ ephemeral เพื่อไม่ให้เกะกะ
@@ -510,6 +519,13 @@ class InfoButtonView(discord.ui.View):
             view=select_view, 
             ephemeral=True
         )
+
+    # ⚠️ เพิ่ม Callback เพื่อเชื่อม Custom ID ที่สร้างไว้ใน __init__ เข้ากับเมธอด
+    @discord.ui.button.callback("open_info_select_btn")
+    async def open_info_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # เรียกใช้เมธอดเดิม
+        await self.open_info(interaction, button)
+
 
 # --- LOGIC FUNCTIONS (Continued) ---
 
@@ -668,10 +684,8 @@ async def on_ready():
     
     if "btn_label" in data["setup"]:
         bot.add_view(StartAuctionView(data["setup"]["btn_label"]))
-    # ต้อง add view ของ TransactionView และ InfoSelectView/InfoButtonView ถ้ามีการใช้ custom_id 
-    # ในกรณีนี้เราไม่ได้ใช้ custom_id แบบคงที่ใน InfoSelectView และ InfoButtonView ที่มีการส่ง data
-    # จึงไม่ต้อง add_view ตรงนี้ แต่ต้องทำให้โค้ดทำงานได้แม้บอทรีสตาร์ท (ซึ่งอาจต้องเปลี่ยนไปใช้ persistent views)
-    bot.add_view(TransactionView(0)) # เพิ่มไว้เพื่อดักปุ่ม Transaction
+    # ต้อง add view ของ TransactionView
+    bot.add_view(TransactionView(0)) 
 
 @bot.event
 async def on_message(message):
