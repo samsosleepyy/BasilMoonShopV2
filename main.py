@@ -34,7 +34,7 @@ def load_data():
         return {
             "admins": [],
             "support_ids": [],
-            "setup": {}, # จะเก็บ noti_role ไว้ในนี้
+            "setup": {}, 
             "auction_count": 0,
             "lock_time": 120,
             "active_auctions": {}
@@ -117,11 +117,7 @@ class DenyReasonModal(discord.ui.Modal, title="เหตุผลไม่อน
             if channel:
                 await channel.send(f"🚫 ไม่อนุมัติการประมูลของ <@{self.owner_id}>\nเหตุผล: {self.reason.value}")
 
-        try:
-            user = await interaction.guild.fetch_member(self.owner_id)
-            await user.send(f"การประมูลของคุณไม่ได้รับการอนุมัติ❌\nเหตุผล: {self.reason.value}")
-        except:
-            pass
+        # [แก้ไข] ลบส่วนที่ส่ง DM หาผู้ใช้ออกแล้ว
         
         try:
             await interaction.message.delete()
@@ -129,7 +125,6 @@ class DenyReasonModal(discord.ui.Modal, title="เหตุผลไม่อน
             pass
 
 class AuctionImagesModal(discord.ui.Modal, title="ข้อมูลการประมูล (2/2)"):
-    # Modal 5 inputs limit fix
     img1 = discord.ui.TextInput(label="รูป 1 (ลิ้งค์) *บังคับ", required=True)
     img2 = discord.ui.TextInput(label="รูป 2 (ลิ้งค์)", required=False)
     rights = discord.ui.TextInput(label="สิทธิ์", placeholder="เช่น สิทธิ์ขาด, สิทธิ์เชิงพาณิชย์", required=True)
@@ -319,7 +314,6 @@ class ApprovalView(discord.ui.View):
         except Exception as e:
             return await interaction.followup.send(f"สร้างห้องไม่สำเร็จ: {e}", ephemeral=True)
 
-        # [FIXED] ตรวจสอบ Noti Role
         noti_role_id = data["setup"].get("noti_role")
         ping_msg = f"<@&{noti_role_id}>" if noti_role_id else "@everyone"
 
@@ -334,7 +328,7 @@ class ApprovalView(discord.ui.View):
 สิทธิ์ : {self.auction_data['rights']}
 เพิ่มเติม : {self.auction_data['extra']}
 เวลาปิดประมูล : <t:{self.auction_data['end_timestamp']}:R>
-{ping_msg}""" # ใช้ ping_msg แทน @everyone เดิม
+{ping_msg}"""
 
         valid_images = [img for img in self.auction_data['images'] if img]
         img_str = "\n".join(valid_images)
@@ -354,7 +348,7 @@ class ApprovalView(discord.ui.View):
             "winner_name": None,
             "last_msg_id": None,
             "history": [],
-            "status": "active" # เพิ่มสถานะเพื่อเช็คว่าจบหรือยัง
+            "status": "active"
         }
         save_data(data)
 
@@ -399,28 +393,50 @@ class StartAuctionView(discord.ui.View):
 async def end_auction_process(channel, auction_data):
     cid = str(channel.id)
     
-    # [FIXED] เช็คว่ามีข้อมูลหรือไม่ และสถานะจบไปแล้วหรือยัง
     if cid not in data["active_auctions"]:
         return
     
     if data["active_auctions"][cid].get("status") == "ended":
-        return # ถ้าจบไปแล้ว ให้หยุดทำงานทันที (กันแจ้งเตือนเบิ้ล)
+        return 
 
-    # [FIXED] ตั้งสถานะเป็น ended ทันที เพื่อไม่ให้คำสั่งอื่นมาแย่งจบ
+    # Set status first
     data["active_auctions"][cid]["status"] = "ended"
     save_data(data)
 
     winner_id = auction_data["winner_id"]
     
-    if winner_id:
-        await channel.send(f"# <@{winner_id}> ชนะการประมูลครั้งที่ : {auction_data['count']}")
-    else:
-        await channel.send(f"# ปิดประมูล (ไม่มีผู้ชนะ)")
+    # [แก้ไข] กรณีไม่มีผู้ชนะ
+    if not winner_id:
+        # 1. แจ้งเตือนในห้องประมูลว่าไม่มีคน
+        await channel.send("# ปิดประมูล (ไม่มีผู้ชนะ)")
+        
+        # 2. ส่ง Feedback
+        feedback_channel_id = data["setup"].get("feedback_channel")
+        if feedback_channel_id:
+            feed_channel = channel.guild.get_channel(feedback_channel_id)
+            if feed_channel:
+                embed = discord.Embed(title="❌ การประมูลจบลง (ไม่มีผู้ประมูล)", color=discord.Color.red())
+                embed.add_field(name="การประมูลครั้งที่", value=str(auction_data['count']))
+                embed.add_field(name="โดย", value=auction_data['owner_name'])
+                embed.add_field(name="สถานะ", value="ไม่มีผู้ประมูล")
+                await feed_channel.send(embed=embed)
+        
+        # 3. ลบห้องทันที (รอ 5 วินาทีเพื่อให้เห็นข้อความปิดนิดนึง)
+        await asyncio.sleep(5)
+        await channel.delete()
+        
+        # 4. ลบข้อมูล
+        del data["active_auctions"][cid]
+        save_data(data)
+        return
+
+    # กรณีมีผู้ชนะ ทำงานต่อปกติ
+    await channel.send(f"# <@{winner_id}> ชนะการประมูลครั้งที่ : {auction_data['count']}")
 
     lock_wait = data.get("lock_time", 120)
     if lock_wait > 0:
         lock_end_ts = int(time.time() + lock_wait)
-        await channel.send(f"⏳ รอเวลา {lock_wait} วินาที ก่อนทำการล็อคห้อง <t:{lock_end_ts}:R>")
+        await channel.send(f"⏳ สามารถพูดคุยกันได้ {lock_wait} วินาที ก่อนทำการล็อคห้อง <t:{lock_end_ts}:R>")
         await asyncio.sleep(lock_wait)
 
     try:
@@ -453,9 +469,7 @@ async def end_auction_process(channel, auction_data):
 
 @tasks.loop(seconds=30)
 async def check_auctions_time():
-    # ลูปเช็คเวลา
     for channel_id, auction in list(data["active_auctions"].items()):
-        # [FIXED] ถ้าจบไปแล้ว ให้ข้ามไปเลย
         if auction.get("status") == "ended":
             continue
 
@@ -464,7 +478,6 @@ async def check_auctions_time():
             if channel:
                 await end_auction_process(channel, auction)
             else:
-                # ถ้าห้องหายไปแล้ว ลบข้อมูลทิ้ง
                 del data["active_auctions"][channel_id]
                 save_data(data)
 
@@ -490,7 +503,6 @@ async def on_message(message):
 
     channel_id = str(message.channel.id)
     
-    # เช็คว่าเป็นห้องประมูล และยังไม่จบ (Status != ended)
     if channel_id in data["active_auctions"] and data["active_auctions"][channel_id].get("status") != "ended":
         auction = data["active_auctions"][channel_id]
         content = message.content.strip()
@@ -552,7 +564,6 @@ async def noti(interaction: discord.Interaction, role: discord.Role):
     if not is_admin(interaction.user):
         return await no_permission(interaction)
     
-    # บันทึก ID ของ Role ลงใน setup
     data["setup"]["noti_role"] = role.id
     save_data(data)
     
@@ -619,7 +630,7 @@ async def setup(interaction: discord.Interaction,
         "approval_channel": approval_channel.id,
         "feedback_channel": feedback_channel.id if feedback_channel else None,
         "btn_label": btn_label,
-        "noti_role": data["setup"].get("noti_role") # รักษาค่า noti เดิมถ้ามี
+        "noti_role": data["setup"].get("noti_role")
     }
     save_data(data)
 
