@@ -14,7 +14,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot is running!"
+    return "ดูทำไม"
 
 def run():
     app.run(host='0.0.0.0', port=8080)
@@ -386,9 +386,13 @@ class ApprovalView(discord.ui.View):
 เวลาปิดประมูล : <t:{self.auction_data['end_timestamp']}:R>
 {ping_msg}"""
 
-        # รวบรวม URL รูปภาพและส่งในข้อความเดียว
+        # [แก้ไข] ใช้ Spoiler Tags ||...|| เพื่อซ่อนลิงก์รูปภาพ
         valid_images = [img for img in self.auction_data['images'] if img]
-        img_str = "\n".join(valid_images)
+        
+        # ห่อหุ้ม URL ด้วย || ก่อนนำมารวมกัน
+        spoiler_images = [f"||{url}||" for url in valid_images] 
+
+        img_str = "\n".join(spoiler_images)
         msg_content += f"\n{img_str}"
 
         await channel.send(msg_content, view=AuctionControlView())
