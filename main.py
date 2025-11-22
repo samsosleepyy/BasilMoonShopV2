@@ -78,30 +78,48 @@ async def no_permission(interaction):
 # --- LOGIC FUNCTIONS (MOVED UP) ---
 
 async def submit_to_approval(guild, full_data):
-    # ฟังก์ชันส่งข้อมูลไปช่องอนุมัติ (ใช้ร่วมกันหลังอัปรูปเสร็จ)
+    # ฟังก์ชันส่งข้อมูลไปช่องอนุมัติ (แบบ Embed Gallery เพื่อซ่อนชื่อไฟล์)
     approval_channel_id = data["setup"].get("approval_channel")
     if not approval_channel_id:
-        return None # Config error
+        return None 
     
     approval_channel = guild.get_channel(approval_channel_id)
     if not approval_channel:
         return None
 
-    embed = discord.Embed(title="คำขอเปิดประมูลใหม่", color=discord.Color.orange())
-    embed.set_author(name=full_data['owner_name'], icon_url=None)
-    embed.add_field(name="สินค้า", value=full_data['item'], inline=False)
-    embed.add_field(name="ราคาเริ่มต้น", value=f"{full_data['start_price']} บ.", inline=True)
-    embed.add_field(name="บิดขั้นต่ำ", value=f"{full_data['bid_step']} บ.", inline=True)
-    embed.add_field(name="ราคาปิด (BIN)", value=f"{full_data['bin_price']} บ.", inline=True)
-    embed.add_field(name="สิทธิ์", value=full_data['rights'], inline=True)
-    embed.add_field(name="เวลาปิด", value=f"<t:{full_data['end_timestamp']}:R>", inline=True)
-    embed.add_field(name="เพิ่มเติม", value=full_data['extra'], inline=False)
-
-    # ใช้รูปแรกเป็น Cover
-    if full_data['images'] and len(full_data['images']) > 0:
-        embed.set_image(url=full_data['images'][0])
+    # --- สร้าง Embed อันหลัก (มีข้อมูลครบ + รูปที่ 1) ---
+    embeds = []
     
-    await approval_channel.send(embed=embed, view=ApprovalView(full_data))
+    main_embed = discord.Embed(title="คำขอเปิดประมูลใหม่", color=discord.Color.orange())
+    main_embed.set_author(name=full_data['owner_name'], icon_url=None)
+    main_embed.add_field(name="สินค้า", value=full_data['item'], inline=False)
+    main_embed.add_field(name="ราคาเริ่มต้น", value=f"{full_data['start_price']} บ.", inline=True)
+    main_embed.add_field(name="บิดขั้นต่ำ", value=f"{full_data['bid_step']} บ.", inline=True)
+    main_embed.add_field(name="ราคาปิด (BIN)", value=f"{full_data['bin_price']} บ.", inline=True)
+    main_embed.add_field(name="สิทธิ์", value=full_data['rights'], inline=True)
+    main_embed.add_field(name="เวลาปิด", value=f"<t:{full_data['end_timestamp']}:R>", inline=True)
+    main_embed.add_field(name="เพิ่มเติม", value=full_data['extra'], inline=False)
+
+    # ใส่รูปแรกใน Embed หลัก
+    if full_data['images'] and len(full_data['images']) > 0:
+        main_embed.set_image(url=full_data['images'][0])
+    
+    # เพิ่ม Embed หลักเข้าลิสต์
+    embeds.append(main_embed)
+
+    # --- สร้าง Embed รอง (สำหรับรูปที่ 2, 3, 4...) ---
+    if len(full_data['images']) > 1:
+        for img_url in full_data['images'][1:]:
+            # จำกัดไม่ให้ส่งเกิน 4 รูป (รวมรูปแรก) เพื่อความสวยงาม
+            if len(embeds) >= 4: 
+                break 
+                
+            sec_embed = discord.Embed(url="https://discord.com", color=discord.Color.orange())
+            sec_embed.set_image(url=img_url)
+            embeds.append(sec_embed)
+    
+    # ส่งแบบ embeds=... (ส่งเป็นชุด)
+    await approval_channel.send(embeds=embeds, view=ApprovalView(full_data))
     return True
 
 # --- MODALS ---
@@ -368,6 +386,7 @@ class ApprovalView(discord.ui.View):
 เวลาปิดประมูล : <t:{self.auction_data['end_timestamp']}:R>
 {ping_msg}"""
 
+        # รวบรวม URL รูปภาพและส่งในข้อความเดียว
         valid_images = [img for img in self.auction_data['images'] if img]
         img_str = "\n".join(valid_images)
         msg_content += f"\n{img_str}"
