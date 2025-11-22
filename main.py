@@ -8,7 +8,7 @@ import time
 from datetime import datetime, timedelta
 from flask import Flask
 from threading import Thread
-import io # <-- เพิ่มส่วนนี้เพื่อจัดการข้อมูลไบนารี
+import io 
 
 # --- KEEP ALIVE SERVER ---
 app = Flask('')
@@ -120,7 +120,8 @@ async def submit_to_approval(guild, full_data):
     
     # 4. บันทึก URL ใหม่ที่ Discord สร้างให้ และลบข้อมูลไบนารีออกจาก RAM
     full_data["images"] = [att.url for att in sent_message.attachments]
-    del full_data["images_data"] # ลบข้อมูลไบนารีทันทีเพื่อประหยัด RAM
+    if "images_data" in full_data:
+        del full_data["images_data"] # ลบข้อมูลไบนารีทันทีเพื่อประหยัด RAM
     
     return True
 
@@ -388,13 +389,13 @@ class ApprovalView(discord.ui.View):
 เวลาปิดประมูล : <t:{self.auction_data['end_timestamp']}:R>
 {ping_msg}"""
 
-        # [แก้ไข] ใช้ Spoiler Tags ||...|| เพื่อซ่อนลิงก์รูปภาพ
+        # [แก้ไข] ใช้ -# นำหน้าลิงก์แทนการใช้ ||...|| เพื่อให้ภาพแสดงพรีวิวได้
         valid_images = [img for img in self.auction_data['images'] if img]
         
-        # ห่อหุ้ม URL ด้วย || ก่อนนำมารวมกัน
-        spoiler_images = [f"||{url}||" for url in valid_images] 
+        # ใช้ -# นำหน้า URL เพื่อให้แสดงเป็นลิงก์ปกติและภาพพรีวิวปรากฏ
+        prefixed_images = [f"-# {url}" for url in valid_images] 
 
-        img_str = "\n".join(spoiler_images)
+        img_str = "\n".join(prefixed_images)
         msg_content += f"\n{img_str}"
 
         await channel.send(msg_content, view=AuctionControlView())
