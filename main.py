@@ -8,13 +8,14 @@ import time
 from datetime import datetime, timedelta
 from flask import Flask
 from threading import Thread
+import io # <-- เพิ่มส่วนนี้เพื่อจัดการข้อมูลไบนารี
 
 # --- KEEP ALIVE SERVER ---
 app = Flask('')
 
 @app.route('/')
 def home():
-    return "ดูทำไม"
+    return "Bot is running!"
 
 def run():
     app.run(host='0.0.0.0', port=8080)
@@ -78,7 +79,7 @@ async def no_permission(interaction):
 # --- LOGIC FUNCTIONS (MOVED UP) ---
 
 async def submit_to_approval(guild, full_data):
-    # ฟังก์ชันส่งข้อมูลไปช่องอนุมัติ (แบบ Embed Gallery เพื่อซ่อนชื่อไฟล์)
+    # ฟังก์ชันส่งข้อมูลไปช่องอนุมัติ (แบบส่งไฟล์แนบหลายไฟล์พร้อม Embed)
     approval_channel_id = data["setup"].get("approval_channel")
     if not approval_channel_id:
         return None 
@@ -86,10 +87,20 @@ async def submit_to_approval(guild, full_data):
     approval_channel = guild.get_channel(approval_channel_id)
     if not approval_channel:
         return None
-
-    # --- สร้าง Embed อันหลัก (มีข้อมูลครบ + รูปที่ 1) ---
-    embeds = []
     
+    # --- 1. เตรียมไฟล์สำหรับส่ง ---
+    files_to_send = []
+    # ใช้ io.BytesIO เพื่อให้ discord.File อ่านข้อมูลไบนารีได้
+    if "images_data" in full_data:
+        for img_info in full_data["images_data"]:
+            files_to_send.append(
+                discord.File(
+                    fp=io.BytesIO(img_info["data"]), 
+                    filename=img_info["filename"]
+                )
+            )
+
+    # --- 2. สร้าง Embed หลัก (ข้อมูลครบ) ---
     main_embed = discord.Embed(title="คำขอเปิดประมูลใหม่", color=discord.Color.orange())
     main_embed.set_author(name=full_data['owner_name'], icon_url=None)
     main_embed.add_field(name="สินค้า", value=full_data['item'], inline=False)
@@ -100,26 +111,17 @@ async def submit_to_approval(guild, full_data):
     main_embed.add_field(name="เวลาปิด", value=f"<t:{full_data['end_timestamp']}:R>", inline=True)
     main_embed.add_field(name="เพิ่มเติม", value=full_data['extra'], inline=False)
 
-    # ใส่รูปแรกใน Embed หลัก
-    if full_data['images'] and len(full_data['images']) > 0:
-        main_embed.set_image(url=full_data['images'][0])
+    # 3. ส่งไฟล์และ Embed ในข้อความเดียว
+    sent_message = await approval_channel.send(
+        embed=main_embed, 
+        files=files_to_send, 
+        view=ApprovalView(full_data)
+    )
     
-    # เพิ่ม Embed หลักเข้าลิสต์
-    embeds.append(main_embed)
-
-    # --- สร้าง Embed รอง (สำหรับรูปที่ 2, 3, 4...) ---
-    if len(full_data['images']) > 1:
-        for img_url in full_data['images'][1:]:
-            # จำกัดไม่ให้ส่งเกิน 4 รูป (รวมรูปแรก) เพื่อความสวยงาม
-            if len(embeds) >= 4: 
-                break 
-                
-            sec_embed = discord.Embed(url="https://discord.com", color=discord.Color.orange())
-            sec_embed.set_image(url=img_url)
-            embeds.append(sec_embed)
+    # 4. บันทึก URL ใหม่ที่ Discord สร้างให้ และลบข้อมูลไบนารีออกจาก RAM
+    full_data["images"] = [att.url for att in sent_message.attachments]
+    del full_data["images_data"] # ลบข้อมูลไบนารีทันทีเพื่อประหยัด RAM
     
-    # ส่งแบบ embeds=... (ส่งเป็นชุด)
-    await approval_channel.send(embeds=embeds, view=ApprovalView(full_data))
     return True
 
 # --- MODALS ---
@@ -201,7 +203,7 @@ class AuctionImagesModal(discord.ui.Modal, title="ข้อมูลการป
             "end_timestamp": end_timestamp,
             "owner_id": interaction.user.id,
             "owner_name": interaction.user.name,
-            "images": [] # รอใส่รูป
+            "images": [] # ล้าง/รอใส่ URL ใหม่หลังส่งไฟล์
         })
 
         # ตรวจสอบว่ามีการตั้งค่าช่องอัปโหลดรูปไหม
@@ -613,7 +615,7 @@ async def on_message(message):
     if message.author.bot: return
 
     # ------------------------------------------------
-    # [NEW] ตรวจจับการอัปรูปในช่อง Image Channel
+    # [แก้ไข] ตรวจจับการอัปรูปในช่อง Image Channel และบันทึกไบนารี
     # ------------------------------------------------
     img_channel_id = data["setup"].get("image_channel")
     if img_channel_id and message.channel.id == img_channel_id:
@@ -621,13 +623,24 @@ async def on_message(message):
         if message.author.id in pending_auctions:
             # เช็คว่ามีรูปไหม
             if message.attachments:
+                
                 # เอาข้อมูลที่จำไว้มาใช้
                 full_data = pending_auctions[message.author.id]
                 
-                # บันทึกลิ้งค์รูป
+                # บันทึกไบนารีของไฟล์และชื่อไฟล์
+                full_data["images_data"] = [] 
+                full_data["images"] = [] # ล้างคีย์ images ทิ้ง
+
                 for attachment in message.attachments:
-                    full_data["images"].append(attachment.url)
-                
+                    try:
+                        file_bytes = await attachment.read()
+                        full_data["images_data"].append({
+                            "data": file_bytes,
+                            "filename": attachment.filename
+                        })
+                    except Exception as e:
+                        print(f"Error reading attachment: {e}")
+                        
                 # ส่งไปอนุมัติ
                 await message.channel.send("ได้รับรูปภาพแล้ว กำลังส่งคำขออนุมัติ... ✅", delete_after=5)
                 await submit_to_approval(message.guild, full_data)
@@ -636,10 +649,10 @@ async def on_message(message):
                 del pending_auctions[message.author.id]
                 await message.channel.set_permissions(message.author, overwrite=None)
                 
-                return # จบการทำงาน
+                return
             else:
                 # ถ้าผู้ใช้พิมข้อความมาแต่ไม่มีรูป
-                return # ปล่อยผ่าน หรือจะแจ้งเตือนก็ได้
+                return 
 
     channel_id = str(message.channel.id)
     
