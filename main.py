@@ -499,17 +499,20 @@ class InfoButtonView(discord.ui.View):
         super().__init__(timeout=None)
         self.data = data
 
-        # 🟢 แก้ไข: ย้ายการสร้างปุ่มมาที่ __init__
-        self.add_item(
-            discord.ui.Button(
-                label=data['button_label'], 
-                style=discord.ButtonStyle.primary, 
-                custom_id="open_info_select_btn"
-            )
+        # 🟢 แก้ไข: สร้างปุ่ม
+        button = discord.ui.Button(
+            label=data['button_label'], 
+            style=discord.ButtonStyle.primary, 
+            custom_id="open_info_select_btn"
         )
+        
+        # ⚠️ กำหนด callback ของปุ่มโดยตรงไปยังเมธอด open_info
+        button.callback = self.open_info
+        
+        self.add_item(button)
 
-    # 🛑 ลบ @discord.ui.button(...) ที่อยู่ด้านบนออก
-    async def open_info(self, interaction: discord.Interaction, button: discord.ui.Button):
+    # 🛑 ไม่ใช้ Decorator
+    async def open_info(self, interaction: discord.Interaction): # รับแค่ interaction
         # เมธอดนี้ถูกเรียกใช้ผ่าน callback
         select_view = InfoSelectView(self.data)
         
@@ -519,12 +522,6 @@ class InfoButtonView(discord.ui.View):
             view=select_view, 
             ephemeral=True
         )
-
-    # ⚠️ เพิ่ม Callback เพื่อเชื่อม Custom ID ที่สร้างไว้ใน __init__ เข้ากับเมธอด
-    @discord.ui.button.callback("open_info_select_btn")
-    async def open_info_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # เรียกใช้เมธอดเดิม
-        await self.open_info(interaction, button)
 
 
 # --- LOGIC FUNCTIONS (Continued) ---
