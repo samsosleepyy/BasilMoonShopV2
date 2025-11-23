@@ -455,7 +455,6 @@ class StartAuctionView(discord.ui.View):
 # --- NEW INFO COMMAND VIEWS ---
 
 class InfoSelectView(discord.ui.View):
-    # ⚠️ ปรับให้รับ info_data ตรงๆ แทนที่จะรับ data เพื่อให้ส่งเข้า __init__ ได้
     def __init__(self, info_data):
         super().__init__(timeout=None)
         self.data = info_data
@@ -483,18 +482,28 @@ class InfoSelectView(discord.ui.View):
     async def select_callback(self, interaction: discord.Interaction):
         selected_value = interaction.data['values'][0]
         
+        title_text = ""
+        description_text = ""
+        
         if selected_value == "option1":
-            response_text = f"## 📰 ข้อมูล: {self.data['select_label1']}\n\n{self.data['info1']}"
+            title_text = f"ข้อมูล: {self.data['select_label1']}"
+            description_text = self.data['info1']
         elif selected_value == "option2":
-            response_text = f"## 📰 ข้อมูล: {self.data['select_label2']}\n\n{self.data['info2']}"
+            title_text = f"ข้อมูล: {self.data['select_label2']}"
+            description_text = self.data['info2']
         else:
-            response_text = "❌ ไม่มีข้อมูลสำหรับตัวเลือกนี้"
+            title_text = "❌ ไม่มีข้อมูลสำหรับตัวเลือกนี้"
+            description_text = "กรุณาเลือกตัวเลือกที่กำหนด"
             
-        # ส่งข้อความตอบกลับแบบส่วนตัว (Ephemeral)
-        await interaction.response.send_message(response_text, ephemeral=True)
-
-
-# 🛑 ลบคลาส InfoButtonView ออก
+        # 🟢 สร้าง Embed พร้อมสีที่กำหนด (#03e3fc = 0x03e3fc)
+        embed = discord.Embed(
+            title=title_text,
+            description=description_text,
+            color=0x03e3fc 
+        )
+        
+        # 🟢 ส่ง Embed แทนข้อความธรรมดา (ยังคงเป็น Ephemeral)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 # --- LOGIC FUNCTIONS (Continued) ---
@@ -763,7 +772,6 @@ async def on_message(message):
 @app_commands.describe(
     channel="ช่องที่จะส่งข้อความไป",
     message="ข้อความหลัก",
-    # 🛑 ลบ button_label
     select_placeholder="ข้อความที่แสดงในช่องเลือก (เช่น เลือกหัวข้อที่ต้องการ)",
     select_label1="ข้อความปุ่มตัวเลือกที่ 1 (เช่น วิธีการสั่ง)",
     select_label2="ข้อความปุ่มตัวเลือกที่ 2 (เช่น อัตราค่าบริการ)",
@@ -774,7 +782,6 @@ async def info_cmd(
     interaction: discord.Interaction, 
     channel: discord.TextChannel, 
     message: str, 
-    # 🛑 ลบ button_label: str ออก
     select_placeholder: str,
     select_label1: str,
     select_label2: str,
