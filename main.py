@@ -41,7 +41,7 @@ def load_data():
             "setup": {}, 
             "forum_setup": {}, 
             "auction_count": 0,
-            "forum_ticket_count": 0, # ตัวนับ Forum Ticket
+            "forum_ticket_count": 0, 
             "lock_time": 120,
             "active_auctions": {},
             "active_forum_tickets": {}
@@ -182,7 +182,15 @@ async def end_auction_process(channel, auction_data):
         await channel.send("ช่องนี้ได้เป็นช่องส่วนตัวแล้วสามารถทำธุรกรรมได้เลย...")
         
         overwrites = {}
-        deny_all = discord.PermissionOverwrite(view_channel=False)
+        deny_all = discord.PermissionOverwrite(
+            view_channel=False, read_messages=False, read_message_history=False,
+            send_messages=False, send_tts_messages=False, manage_messages=False,
+            embed_links=False, attach_files=False, mention_everyone=False,
+            use_external_emojis=False, add_reactions=False, use_application_commands=False,
+            manage_channels=False, manage_permissions=False, manage_webhooks=False,
+            create_instant_invite=False, create_public_threads=False, create_private_threads=False,
+            send_messages_in_threads=False, manage_threads=False
+        )
         for role in channel.guild.roles:
             if role.permissions.administrator: continue
             overwrites[role] = deny_all
@@ -505,17 +513,6 @@ class InfoSelectView(discord.ui.View):
         embed = discord.Embed(title=title_text, description=description_text, color=0x03e3fc)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-class InfoButtonView(discord.ui.View):
-    def __init__(self, data):
-        super().__init__(timeout=None)
-        self.data = data
-        button = discord.ui.Button(label=data['button_label'], style=discord.ButtonStyle.primary, custom_id="open_info_select_btn")
-        button.callback = self.open_info
-        self.add_item(button)
-    async def open_info(self, interaction: discord.Interaction):
-        select_view = InfoSelectView(self.data)
-        await interaction.response.send_message(f"✅ **กรุณาเลือกตัวเลือก:**", view=select_view, ephemeral=True)
-
 # --- VIEWS (FORUM) ---
 
 class ForumPostControlView(discord.ui.View):
@@ -527,8 +524,10 @@ class ForumPostControlView(discord.ui.View):
         report_btn = discord.ui.Button(label=report_label, style=discord.ButtonStyle.red, custom_id="forum_report_btn")
         report_btn.callback = self.report_callback
         self.add_item(report_btn)
+
     async def report_callback(self, interaction: discord.Interaction):
         await interaction.response.send_modal(ReportModal())
+
     async def buy_callback(self, interaction: discord.Interaction):
         setup = data.get("forum_setup", {})
         category_id = setup.get("category_id")
@@ -631,6 +630,23 @@ class AdminConfirmView(discord.ui.View):
 # --- EVENTS ---
 
 @bot.event
+async def on_ready():
+    print(f"Logged in as {bot.user}")
+    try:
+        synced = await bot.tree.sync()
+        print(f"Synced {len(synced)} commands")
+    except Exception as e:
+        print(e)
+    
+    # Reload Views
+    if "btn_label" in data["setup"]:
+        bot.add_view(StartAuctionView(data["setup"]["btn_label"]))
+    bot.add_view(TransactionView(0)) 
+    bot.add_view(ForumPostControlView()) 
+    bot.add_view(ForumTicketControlView()) 
+    bot.add_view(AdminConfirmView(None, None)) 
+
+@bot.event
 async def on_thread_create(thread):
     forum_channel_id = data.get("forum_setup", {}).get("forum_channel_id")
     if forum_channel_id and thread.parent_id == forum_channel_id:
@@ -700,6 +716,16 @@ async def on_message(message):
 
 # --- COMMANDS ---
 
+@bot.command()
+async def sync(ctx):
+    if ctx.author.id != bot.owner_id and ctx.author.id not in data["admins"]:
+        return await ctx.send("คุณไม่มีสิทธิ์ใช้คำสั่งนี้")
+    try:
+        fmt = await bot.tree.sync()
+        await ctx.send(f"✅ Synced {len(fmt)} commands.")
+    except Exception as e:
+        await ctx.send(f"❌ Error: {e}")
+
 @bot.tree.command(name="ticketsforum", description="ตั้งค่าระบบ Tickets สำหรับ Forum")
 @app_commands.describe(category="หมวดหมู่ที่จะสร้างห้อง Ticket", forum_channel="ช่อง Forum ที่จะให้บอททำงาน", report_channel="ช่องสำหรับส่ง Report", buy_label="ข้อความปุ่มซื้อ", report_label="ข้อความปุ่มรายงาน")
 async def ticketsforum(interaction: discord.Interaction, category: discord.CategoryChannel, forum_channel: discord.ForumChannel, report_channel: discord.TextChannel, buy_label: str = "🛒 กดสั่งซื้อตรงนี้", report_label: str = "🚨 รายงาน"):
@@ -709,12 +735,12 @@ async def ticketsforum(interaction: discord.Interaction, category: discord.Categ
     await interaction.response.send_message(f"✅ ตั้งค่า Tickets Forum เรียบร้อย!\n- Forum: {forum_channel.mention}\n- Category สร้างห้อง: {category.mention}\n- Report: {report_channel.mention}", ephemeral=True)
 
 @bot.tree.command(name="info", description="สร้างข้อความพร้อม Select Menu สำหรับแสดงข้อมูลเฉพาะผู้ใช้")
-@app_commands.describe(channel="ช่องที่จะส่งข้อความไป", message="ข้อความหลัก", button_label="ข้อความปุ่มสำหรับเปิด Select", select_placeholder="ข้อความในช่องเลือก", select_label1="ตัวเลือก 1", select_label2="ตัวเลือก 2", info1="รายละเอียด 1", info2="รายละเอียด 2")
-async def info_cmd(interaction: discord.Interaction, channel: discord.TextChannel, message: str, button_label: str, select_placeholder: str, select_label1: str, select_label2: str, info1: str, info2: str):
+@app_commands.describe(channel="ช่องที่จะส่งข้อความไป", message="ข้อความหลัก", select_placeholder="ข้อความในช่องเลือก", select_label1="ตัวเลือก 1", select_label2="ตัวเลือก 2", info1="รายละเอียด 1", info2="รายละเอียด 2")
+async def info_cmd(interaction: discord.Interaction, channel: discord.TextChannel, message: str, select_placeholder: str, select_label1: str, select_label2: str, info1: str, info2: str):
     if not is_admin(interaction.user): return await no_permission(interaction)
     await interaction.response.defer(ephemeral=True)
-    info_data = {"button_label": button_label, "select_placeholder": select_placeholder, "select_label1": select_label1, "select_label2": select_label2, "info1": info1, "info2": info2}
-    view = InfoButtonView(info_data)
+    info_data = {"select_placeholder": select_placeholder, "select_label1": select_label1, "select_label2": select_label2, "info1": info1, "info2": info2}
+    view = InfoSelectView(info_data)
     try:
         await channel.send(message, view=view)
         await interaction.followup.send(f"ส่งข้อความพร้อมปุ่มไปยัง {channel.mention} เรียบร้อยแล้ว ✅", ephemeral=True)
@@ -732,7 +758,7 @@ async def imagec(interaction: discord.Interaction, channel: discord.TextChannel)
     await channel.edit(overwrites=overwrites)
     await interaction.response.send_message(f"ตั้งค่าช่องอัปโหลดรูปเป็น {channel.mention} และล็อคช่องเรียบร้อยแล้ว ✅", ephemeral=True)
 
-@bot.tree.command(name="resetdata", description="รีเซ็ตจำนวนครั้งการประมูลและ Forum Tickets กลับเป็น 0")
+@bot.tree.command(name="resetdata", description="รีเซ็ตจำนวนครั้งการประมูลกลับเป็น 0")
 async def resetdata(interaction: discord.Interaction):
     if not is_admin(interaction.user): return await no_permission(interaction)
     data["auction_count"] = 0
