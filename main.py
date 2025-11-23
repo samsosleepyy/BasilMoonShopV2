@@ -331,13 +331,21 @@ class ReportModal(discord.ui.Modal, title="แจ้งรายงาน (Repor
         if not report_channel_id: return await interaction.response.send_message("❌ ระบบยังไม่ได้ตั้งค่าช่อง Report", ephemeral=True)
         report_channel = interaction.guild.get_channel(report_channel_id)
         if report_channel:
-            embed = discord.Embed(title="🚨 มีการแจ้งรายงานใหม่", color=discord.Color.red())
-            embed.add_field(name="ผู้รายงาน", value=interaction.user.mention, inline=True)
-            embed.add_field(name="มาจากช่อง/กระทู้", value=interaction.channel.mention, inline=True)
-            embed.add_field(name="เหตุผล", value=self.reason.value, inline=False)
+            # [NEW] Updated Embed with details
+            embed = discord.Embed(title="🚨 มีการแจ้งรายงานใหม่ (Report)", color=discord.Color.red())
+            embed.add_field(name="👤 ผู้รายงาน", value=interaction.user.mention, inline=True)
+            
+            if isinstance(interaction.channel, discord.Thread):
+                embed.add_field(name="👑 เจ้าของกระทู้", value=f"<@{interaction.channel.owner_id}>", inline=True)
+                embed.add_field(name="🔗 ลิงก์กระทู้", value=f"[กดเพื่อไปที่กระทู้]({interaction.channel.jump_url})", inline=False)
+            else:
+                embed.add_field(name="📍 ช่อง", value=interaction.channel.mention, inline=True)
+                
+            embed.add_field(name="📝 รายละเอียด/เหตุผล", value=self.reason.value, inline=False)
             embed.timestamp = datetime.now()
+            
             await report_channel.send(embed=embed)
-            await interaction.response.send_message("ส่งรายงานเรียบร้อยแล้ว 🙏", ephemeral=True)
+            await interaction.response.send_message("ส่งรายงานเรียบร้อยแล้ว ขอบคุณที่แจ้งครับ 🙏", ephemeral=True)
         else:
             await interaction.response.send_message("❌ หาช่อง Report ไม่เจอ", ephemeral=True)
 
@@ -630,23 +638,6 @@ class AdminConfirmView(discord.ui.View):
 # --- EVENTS ---
 
 @bot.event
-async def on_ready():
-    print(f"Logged in as {bot.user}")
-    try:
-        synced = await bot.tree.sync()
-        print(f"Synced {len(synced)} commands")
-    except Exception as e:
-        print(e)
-    
-    # Reload Views
-    if "btn_label" in data["setup"]:
-        bot.add_view(StartAuctionView(data["setup"]["btn_label"]))
-    bot.add_view(TransactionView(0)) 
-    bot.add_view(ForumPostControlView()) 
-    bot.add_view(ForumTicketControlView()) 
-    bot.add_view(AdminConfirmView(None, None)) 
-
-@bot.event
 async def on_thread_create(thread):
     forum_channel_id = data.get("forum_setup", {}).get("forum_channel_id")
     if forum_channel_id and thread.parent_id == forum_channel_id:
@@ -758,7 +749,7 @@ async def imagec(interaction: discord.Interaction, channel: discord.TextChannel)
     await channel.edit(overwrites=overwrites)
     await interaction.response.send_message(f"ตั้งค่าช่องอัปโหลดรูปเป็น {channel.mention} และล็อคช่องเรียบร้อยแล้ว ✅", ephemeral=True)
 
-@bot.tree.command(name="resetdata", description="รีเซ็ตจำนวนครั้งการประมูลกลับเป็น 0")
+@bot.tree.command(name="resetdata", description="รีเซ็ตจำนวนครั้งการประมูลและ Forum Tickets กลับเป็น 0")
 async def resetdata(interaction: discord.Interaction):
     if not is_admin(interaction.user): return await no_permission(interaction)
     data["auction_count"] = 0
