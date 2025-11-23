@@ -76,6 +76,43 @@ async def no_permission(interaction):
     else:
         await interaction.response.send_message(msg, ephemeral=True)
 
+
+# -------------------------------------------------------------------
+# 🟢 [ใหม่] ฟังก์ชันสำหรับยกเลิกสิทธิ์ผู้ใช้หากหมดเวลา
+# -------------------------------------------------------------------
+async def revoke_permissions_after_timeout(user_id, channel_id, guild_id):
+    # 3 นาที = 180 วินาที
+    await asyncio.sleep(180) 
+
+    # ตรวจสอบว่าผู้ใช้ยังอยู่ในสถานะรอนำเข้าข้อมูลหรือไม่
+    if user_id in pending_auctions:
+        guild = bot.get_guild(guild_id)
+        channel = bot.get_channel(channel_id)
+        member = guild.get_member(user_id)
+        
+        if channel and member:
+            try:
+                # 1. ลบสิทธิ์ผู้ใช้ออกจากช่อง (ไม่ให้เห็น)
+                await channel.set_permissions(member, overwrite=None)
+                
+                # 2. แจ้งเตือนผู้ใช้ว่าสิทธิ์ถูกยกเลิก
+                try:
+                    await member.send(f"⚠️ คำขอเปิดประมูลของคุณถูกยกเลิกแล้ว เนื่องจากคุณไม่ส่งรูปภาพภายใน 3 นาที กรุณาใช้คำสั่ง /auction ใหม่หากต้องการเปิดประมูล")
+                except:
+                    # ไม่สามารถ DM ได้ ให้ส่งในช่องรูปภาพแทน (ถึงแม้ผู้ใช้จะเห็นแค่ข้อความนี้)
+                    await channel.send(f"<@{user_id}> สิทธิ์ของคุณในการส่งรูปถูกยกเลิกแล้ว เนื่องจากเกิน 3 นาที", delete_after=10)
+
+                print(f"Revoked permissions for {member.name} in channel {channel.name} due to timeout.")
+
+            except Exception as e:
+                print(f"Error revoking permissions: {e}")
+
+        # 3. ลบข้อมูลที่รออนุมัติออกจาก RAM
+        if user_id in pending_auctions:
+            del pending_auctions[user_id]
+# -------------------------------------------------------------------
+
+
 # --- LOGIC FUNCTIONS (MOVED UP) ---
 
 async def submit_to_approval(guild, full_data):
@@ -224,19 +261,28 @@ class AuctionImagesModal(discord.ui.Modal, title="ข้อมูลการป
             view_channel=True,
             send_messages=True,
             attach_files=True,
-            read_message_history=True
-            # Others are False/Inherit
+            read_message_history=False # บังคับเป็น False เพื่อไม่ให้เห็นประวัติข้อความ
         )
         await img_channel.set_permissions(interaction.user, overwrite=overwrite)
 
         # 3. แจ้งเตือนผู้ใช้
-        await interaction.followup.send(f"กรุณาส่งรูปภาพสินค้าที่ช่อง : {img_channel.mention} (ส่งได้หลายรูปใน 1 ข้อความ)", ephemeral=True)
+        await interaction.followup.send(f"กรุณาส่งรูปภาพสินค้าที่ช่อง : {img_channel.mention} (ส่งได้หลายรูปใน 1 ข้อความ) โดยคุณจะไม่เห็นประวัติแชทก่อนหน้านี้ **หากไม่ส่งภายใน 3 นาที สิทธิ์การเข้าถึงจะถูกยกเลิก**", ephemeral=True)
         
         # ส่งข้อความ Tag ในช่องรูปภาพเพื่อให้รู้ง่ายๆ
         try:
             await img_channel.send(f"<@{interaction.user.id}> กรุณาส่งรูปสินค้าของคุณที่นี่...")
         except:
             pass
+        
+        # 🟢 [ใหม่] เริ่ม Task เพื่อรอ Timeout
+        asyncio.create_task(
+            revoke_permissions_after_timeout(
+                interaction.user.id, 
+                img_channel.id, 
+                interaction.guild_id
+            )
+        )
+
 
 class AuctionDetailsModal(discord.ui.Modal, title="ข้อมูลการประมูล (1/2)"):
     start_price = discord.ui.TextInput(label="ราคาเริ่มต้น", placeholder="ใส่แค่ตัวเลข", required=True)
@@ -697,12 +743,15 @@ async def on_message(message):
                     except Exception as e:
                         print(f"Error reading attachment: {e}")
                         
+                # 🛑 ลบข้อมูลออกจาก pending_auctions ทันทีเมื่อได้รับรูป
+                if message.author.id in pending_auctions:
+                    del pending_auctions[message.author.id]
+                    
                 # ส่งไปอนุมัติ
                 await message.channel.send("ได้รับรูปภาพแล้ว กำลังส่งคำขออนุมัติ... ✅", delete_after=5)
                 await submit_to_approval(message.guild, full_data)
                 
-                # ลบผู้ใช้ออกจาก pending และลบสิทธิ์ออกจากช่อง
-                del pending_auctions[message.author.id]
+                # ลบสิทธิ์ออกจากช่อง
                 await message.channel.set_permissions(message.author, overwrite=None)
                 
                 return
@@ -822,19 +871,27 @@ async def imagec(interaction: discord.Interaction, channel: discord.TextChannel)
     data["setup"]["image_channel"] = channel.id
     save_data(data)
 
-    # ล็อคช่องไม่ให้ใครเห็น (นอกจาก Admin)
+    # Overwrites สำหรับ Default Role และทุกคน
     overwrites = {
-        interaction.guild.default_role: discord.PermissionOverwrite(view_channel=False)
+        interaction.guild.default_role: discord.PermissionOverwrite(
+            view_channel=False, 
+            read_message_history=False # 🛑 ป้องกันการเห็นประวัติข้อความ
+        )
     }
-    # ไล่ปิด Role อื่นๆ ด้วยเผื่อเหนียว
+    
+    # ไล่ปิด Role อื่นๆ ด้วยเผื่อเหนียว (ตั้งค่าเป็น False ทั้งหมด)
     for role in interaction.guild.roles:
         if role.permissions.administrator:
             continue
-        overwrites[role] = discord.PermissionOverwrite(view_channel=False)
+        # 🛑 ตั้งค่าสิทธิ์หลัก
+        overwrites[role] = discord.PermissionOverwrite(
+            view_channel=False,
+            read_message_history=False 
+        )
     
     await channel.edit(overwrites=overwrites)
 
-    await interaction.response.send_message(f"ตั้งค่าช่องอัปโหลดรูปเป็น {channel.mention} และล็อคช่องเรียบร้อยแล้ว ✅", ephemeral=True)
+    await interaction.response.send_message(f"ตั้งค่าช่องอัปโหลดรูปเป็น {channel.mention} และล็อคช่องเรียบร้อยแล้ว ✅ (ผู้ใช้จะไม่เห็นประวัติแชท)", ephemeral=True)
 
 @bot.tree.command(name="resetdata", description="รีเซ็ตจำนวนครั้งการประมูลกลับเป็น 0")
 async def resetdata(interaction: discord.Interaction):
