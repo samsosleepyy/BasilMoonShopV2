@@ -130,7 +130,11 @@ async def submit_to_approval(guild, full_data):
     main_embed.add_field(name="เวลาปิด", value=f"<t:{full_data['end_timestamp']}:R>", inline=True)
     main_embed.add_field(name="เพิ่มเติม", value=full_data['extra'], inline=False)
 
+    # [แก้ไข] เพิ่มการแท็ก Support Admin ในช่องอนุมัติ
+    support_msg = get_support_mention()
+    
     sent_message = await approval_channel.send(
+        content=support_msg, # แท็กเรียก
         embed=main_embed, 
         files=files_to_send, 
         view=ApprovalView(full_data)
@@ -243,7 +247,11 @@ class CancelReasonModal(discord.ui.Modal, title="เหตุผลการย�
                 embed.add_field(name="โดย", value=self.auction_info['owner_name'])
                 embed.add_field(name="สถานะ", value=f"ไม่สำเร็จ (ยกเลิกโดย {interaction.user.name})")
                 embed.add_field(name="เหตุผล", value=self.reason.value)
-                await channel.send(embed=embed)
+                
+                # [แก้ไข] แท็ก Support Admin เมื่อยกเลิกการประมูล
+                support_msg = get_support_mention()
+                await channel.send(content=support_msg, embed=embed)
+
         await interaction.channel.delete()
         if str(interaction.channel_id) in data["active_auctions"]:
             del data["active_auctions"][str(interaction.channel_id)]
@@ -331,20 +339,20 @@ class ReportModal(discord.ui.Modal, title="แจ้งรายงาน (Repor
         if not report_channel_id: return await interaction.response.send_message("❌ ระบบยังไม่ได้ตั้งค่าช่อง Report", ephemeral=True)
         report_channel = interaction.guild.get_channel(report_channel_id)
         if report_channel:
-            # [NEW] Updated Embed with details
             embed = discord.Embed(title="🚨 มีการแจ้งรายงานใหม่ (Report)", color=discord.Color.red())
             embed.add_field(name="👤 ผู้รายงาน", value=interaction.user.mention, inline=True)
-            
             if isinstance(interaction.channel, discord.Thread):
                 embed.add_field(name="👑 เจ้าของกระทู้", value=f"<@{interaction.channel.owner_id}>", inline=True)
                 embed.add_field(name="🔗 ลิงก์กระทู้", value=f"[กดเพื่อไปที่กระทู้]({interaction.channel.jump_url})", inline=False)
             else:
                 embed.add_field(name="📍 ช่อง", value=interaction.channel.mention, inline=True)
-                
             embed.add_field(name="📝 รายละเอียด/เหตุผล", value=self.reason.value, inline=False)
             embed.timestamp = datetime.now()
             
-            await report_channel.send(embed=embed)
+            # [แก้ไข] แท็ก Support Admin ในช่อง Report
+            support_msg = get_support_mention()
+            await report_channel.send(content=support_msg, embed=embed)
+            
             await interaction.response.send_message("ส่งรายงานเรียบร้อยแล้ว ขอบคุณที่แจ้งครับ 🙏", ephemeral=True)
         else:
             await interaction.response.send_message("❌ หาช่อง Report ไม่เจอ", ephemeral=True)
@@ -626,7 +634,10 @@ class AdminConfirmView(discord.ui.View):
                 embed.add_field(name="ผู้ซื้อ", value=f"<@{ticket_data['buyer_id']}>", inline=True)
                 embed.add_field(name="ผู้ขาย", value=f"<@{ticket_data['seller_id']}>", inline=True)
                 if self.reason: embed.add_field(name="เหตุผลยกเลิก", value=self.reason, inline=False)
-                await feed_channel.send(embed=embed)
+                
+                # [แก้ไข] แท็ก Support Admin ในช่อง Feedback สำหรับ Forum Ticket Log
+                support_msg = get_support_mention()
+                await feed_channel.send(content=support_msg, embed=embed)
 
         await interaction.channel.send("✅ ยืนยันเรียบร้อย! กำลังลบห้องและกระทู้...", delete_after=5)
         await asyncio.sleep(3)
@@ -677,9 +688,10 @@ async def on_message(message):
         if content.startswith("บิด"):
             try: amount = int(content.replace("บิด", "").strip())
             except ValueError: return
-            current = auction["current_price"]
-            step = auction["bid_step"]
-            bin_price = auction["bin_price"]
+            current = int(auction["current_price"])
+            step = int(auction["bid_step"])
+            bin_price = int(auction["bin_price"])
+            print(f"Bid: {amount}, Current: {current}, BIN: {bin_price}")
             min_next = current + step if len(auction["history"]) > 0 else current
             if amount < min_next: 
                  await message.reply("ราคาที่คุณบิดต่ำเกินไป❌", delete_after=10)
@@ -702,7 +714,10 @@ async def on_message(message):
             save_data(data)
             try: await message.channel.edit(name=f"การประมูลครั้งที่-{auction['count']}-ราคา-{amount}")
             except: pass
-            if amount >= bin_price: await end_auction_process(message.channel, auction)
+            if bin_price > 0 and amount >= bin_price:
+                print("BIN Hit! Ending auction...")
+                await message.channel.send("🎉 ราคาถึงกำหนดปิดประมูลแล้ว (Buy It Now)!")
+                await end_auction_process(message.channel, auction)
     await bot.process_commands(message)
 
 # --- COMMANDS ---
