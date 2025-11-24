@@ -27,7 +27,7 @@ def keep_alive():
 # --- CONFIGURATION ---
 TOKEN = os.environ.get('TOKEN') or 'YOUR_BOT_TOKEN_HERE'
 
-# --- TEXT CONFIGURATION (แก้ไขข้อความตรงนี้) ---
+# --- TEXT CONFIGURATION (แก้ไขข้อความตรงนี้: ย้ายขึ้นมาด้านบนสุดตามต้องการ) ---
 TEXT_CONFIG = {
     "no_permission": "คุณไม่มีสิทธิ์ในการใช้คำสั่ง❌",
     "modal_error_time_format": "รูปแบบเวลาไม่ถูกต้อง",
@@ -55,7 +55,6 @@ TEXT_CONFIG = {
     "bid_too_low": "ราคาที่คุณบิดต่ำเกินไป❌",
     "bid_message": "# {user_mention} บิด {amount} บ.-",
     "bid_message_overtake": "\n{prev_winner_mention} ถูกแซงแล้ว!",
-    # แก้ไข: รวมข้อความ bid_bin_reached เข้ากับ countdown_message แล้ว
     "countdown_message": """⚠️ ราคาถึงกำหนดปิดประมูล ({bin_price} บ.)! เริ่มนับถอยหลังยืนยันผู้ชนะ...
 # {user_mention} ราคา {price} ครั้งที่ {i}""",
     "countdown_end_message": "# {user_mention} ราคา {price} **ปิดการประมูล!**",
@@ -107,7 +106,8 @@ DATA_FILE = "auction_data.json"
 # ตัวแปรชั่วคราว (RAM Only)
 pending_auctions = {}
 auction_tasks = {} # เก็บ Task การนับถอยหลังของแต่ละห้อง {channel_id: task}
-name_update_tasks = {} # {channel_id: task} สำหรับจัดการ Rate Limit การเปลี่ยนชื่อห้อง
+# เปลี่ยนชื่อตัวแปรเป็น tasks_to_update_name เพื่อให้ชัดเจนว่าเป็น Task ที่รออัปเดตชื่อ
+tasks_to_update_name = {} # {channel_id: task} สำหรับจัดการ Rate Limit การเปลี่ยนชื่อห้อง (รอ 3 นาที)
 
 def load_data():
     if not os.path.exists(DATA_FILE):
@@ -183,16 +183,18 @@ async def revoke_permissions_after_timeout(user_id, channel_id, guild_id):
 # --- LOGIC FUNCTIONS ---
 
 async def update_channel_name_task(channel, count, amount):
-    # หน่วงเวลา 5 วินาทีก่อนเปลี่ยนชื่อเพื่อจัดการ Rate Limit
-    await asyncio.sleep(5) 
+    # **แก้ไข:** หน่วงเวลา 3 นาที (180 วินาที) ก่อนเปลี่ยนชื่อ
+    await asyncio.sleep(180) 
     try:
+        # **แก้ไข:** เปลี่ยนชื่อช่องเป็นราคาล่าสุด
         await channel.edit(name=f"การประมูลครั้งที่-{count}-ราคา-{amount}")
-    except:
-        pass
+    except Exception as e:
+        # อาจเกิดข้อผิดพลาดจาก Rate Limit (แต่โอกาสน้อยเพราะรอ 3 นาทีแล้ว) หรือสิทธิ์บอท
+        print(f"Error updating channel name after delay: {e}")
     finally:
         # ลบ Task เมื่อเสร็จสิ้นหรือเกิดข้อผิดพลาด
-        if channel.id in name_update_tasks:
-            del name_update_tasks[channel.id]
+        if channel.id in tasks_to_update_name:
+            del tasks_to_update_name[channel.id]
 
 # ฟังก์ชันนับถอยหลัง
 async def run_countdown(channel, user_id, price, auction_data):
@@ -203,39 +205,31 @@ async def run_countdown(channel, user_id, price, auction_data):
     # ส่งข้อความนับถอยหลังเริ่มต้น
     msg = None
     try:
-        # ใช้ข้อความรวมที่มีทั้งแจ้งเตือน BIN และตัวนับถอยหลัง
         countdown_msg_text = TEXT_CONFIG["countdown_message"].format(
             user_mention=f"<@{user_id}>", 
             price=price, 
             i=start_num, 
             bin_price=bin_price
         )
-        # ใช้ .send() แทนการ .reply() เพราะเราลบข้อความเก่าไปแล้ว
         msg = await channel.send(countdown_msg_text) 
         
-        # บันทึก ID ข้อความเพื่อนับถอยหลัง
         auction_data["last_countdown_id"] = msg.id
-        # ลบ last_msg_id เพื่อให้แน่ใจว่าการบิดต่อไปจะรู้ว่าข้อความหลักคือ countdown
         auction_data["last_msg_id"] = None 
         save_data(data)
     except Exception as e:
         print(f"Error sending initial countdown message: {e}")
-        return # ส่งไม่ได้จบการทำงาน
+        return 
 
     # ลูปนับถอยหลัง
     for i in range(start_num - 1, -1, -1):
-        await asyncio.sleep(1) # รอ 1 วินาที
-        
-        # ถ้า Task ถูก Cancel (มีคนบิดแทรก) loop จะหยุดเองโดยอัตโนมัติผ่าน CancelledError (ใน on_message)
+        await asyncio.sleep(1) 
         
         try:
             if i == 0:
-                # หมดเวลาแล้ว!
                 end_msg_text = TEXT_CONFIG["countdown_end_message"].format(user_mention=f"<@{user_id}>", price=price)
                 await msg.edit(content=end_msg_text)
                 await end_auction_process(channel, auction_data)
             else:
-                # แก้ไขตัวเลข
                 countdown_msg_text = TEXT_CONFIG["countdown_message"].format(
                     user_mention=f"<@{user_id}>", 
                     price=price, 
@@ -244,9 +238,8 @@ async def run_countdown(channel, user_id, price, auction_data):
                 )
                 await msg.edit(content=countdown_msg_text)
         except discord.NotFound:
-            break # ข้อความถูกลบ
+            break 
         except asyncio.CancelledError:
-            # Task ถูกยกเลิกโดยการบิดใหม่
             break
         except Exception as e:
             print(f"Countdown Error: {e}")
@@ -278,7 +271,7 @@ async def submit_to_approval(guild, full_data):
     main_embed.add_field(name="เวลาปิด", value=f"<t:{full_data['end_timestamp']}:R>", inline=True)
     main_embed.add_field(name="เพิ่มเติม", value=full_data['extra'], inline=False)
 
-    support_msg = get_support_mention()
+    support_msg = get_support_mention() # แท็ก Support Admin
     
     sent_message = await approval_channel.send(
         content=support_msg,
@@ -297,15 +290,14 @@ async def end_auction_process(channel, auction_data):
     cid = str(channel.id)
     if cid not in data["active_auctions"]: return
     
-    # ถ้ามี task นับถอยหลังค้างอยู่ ให้ยกเลิกก่อน (กันรันซ้อน)
     if cid in auction_tasks:
         auction_tasks[cid].cancel()
         del auction_tasks[cid]
 
-    # ถ้ามี task อัปเดตชื่อห้องค้างอยู่ ให้ยกเลิก
-    if cid in name_update_tasks:
-        name_update_tasks[cid].cancel()
-        del name_update_tasks[cid]
+    # **แก้ไข:** ยกเลิก Task การอัปเดตชื่อช่องค้าง
+    if cid in tasks_to_update_name:
+        tasks_to_update_name[cid].cancel()
+        del tasks_to_update_name[cid]
 
     if data["active_auctions"][cid].get("status") == "ended": return 
 
@@ -353,9 +345,9 @@ async def end_auction_process(channel, auction_data):
     try:
         await channel.send(TEXT_CONFIG["lock_success_message"])
         
+        # ... (โค้ดจัดการสิทธิ์ห้องเหมือนเดิม)
         overwrites = {}
         
-        # 1. กำหนดสิทธิ์ DENY สำหรับทุกคนที่ไม่เกี่ยวข้อง
         deny_all = discord.PermissionOverwrite(
             view_channel=False, read_messages=False, read_message_history=False,
             send_messages=False, send_tts_messages=False, manage_messages=False,
@@ -365,15 +357,12 @@ async def end_auction_process(channel, auction_data):
             create_instant_invite=False, create_public_threads=False, create_private_threads=False,
             send_messages_in_threads=False, manage_threads=False, use_external_stickers=False
         )
-        # ตั้งค่า deny_all ให้กับทุก Role ยกเว้น Role ที่มี Admin
         for role in channel.guild.roles:
             if role.permissions.administrator: continue
             overwrites[role] = deny_all
 
-        # 2. อนุญาตให้บอทเข้าถึง
         overwrites[channel.guild.me] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
         
-        # 3. กำหนดสิทธิ์อนุญาตเฉพาะผู้เกี่ยวข้อง
         strict_allow = discord.PermissionOverwrite(
             view_channel=True, read_message_history=True, send_messages=True,
             attach_files=True, embed_links=True, add_reactions=True,
@@ -391,7 +380,6 @@ async def end_auction_process(channel, auction_data):
             winner = channel.guild.get_member(winner_id)
             if winner: overwrites[winner] = strict_allow
         
-        # ใช้ Channel.edit เพื่ออัปเดตสิทธิ์ทั้งหมด
         await channel.edit(overwrites=overwrites)
         
         await channel.send(TEXT_CONFIG["lock_info_message"], view=TransactionView(channel.id))
@@ -420,22 +408,23 @@ class CancelReasonModal(discord.ui.Modal, title="เหตุผลการย�
                 embed.add_field(name="โดย", value=self.auction_info['owner_name'])
                 embed.add_field(name="สถานะ", value=f"ไม่สำเร็จ (ยกเลิกโดย {interaction.user.name})")
                 embed.add_field(name="เหตุผล", value=self.reason.value)
-                support_msg = get_support_mention()
+                support_msg = get_support_mention() # แท็ก Support Admin
                 await channel.send(content=support_msg, embed=embed)
 
         await interaction.channel.delete()
         if str(interaction.channel_id) in data["active_auctions"]:
-            # ยกเลิก Task และลบข้อมูลการประมูล
             channel_id_str = str(interaction.channel_id)
             if channel_id_str in auction_tasks:
                 auction_tasks[channel_id_str].cancel()
                 del auction_tasks[channel_id_str]
-            if channel_id_str in name_update_tasks:
-                name_update_tasks[channel_id_str].cancel()
-                del name_update_tasks[channel_id_str]
+            # **แก้ไข:** ยกเลิก Task อัปเดตชื่อช่องค้าง
+            if channel_id_str in tasks_to_update_name:
+                tasks_to_update_name[channel_id_str].cancel()
+                del tasks_to_update_name[channel_id_str]
             del data["active_auctions"][channel_id_str]
             save_data(data)
 
+# ... (DenyReasonModal เหมือนเดิม)
 class DenyReasonModal(discord.ui.Modal, title="เหตุผลไม่อนุมัติ"):
     reason = discord.ui.TextInput(label="เหตุผล", style=discord.TextStyle.paragraph)
     def __init__(self, owner_id, embed_data):
@@ -452,9 +441,10 @@ class DenyReasonModal(discord.ui.Modal, title="เหตุผลไม่อน
         try: await interaction.message.delete()
         except: pass
 
+# ... (AuctionImagesModal เหมือนเดิม)
 class AuctionImagesModal(discord.ui.Modal, title="ข้อมูลการประมูล (2/2)"):
     rights = discord.ui.TextInput(label="สิทธิ์", placeholder="เช่น สิทธิ์ขาด, สิทธิ์เชิงพาณิชย์", required=True)
-    extra = discord.ui.TextInput(label="เพิ่มเติม", required=False) # แก้ 'false' เป็น 'False' แล้ว
+    extra = discord.ui.TextInput(label="เพิ่มเติม", required=False) 
     end_time_input = discord.ui.TextInput(label="เวลาปิด (ชั่วโมง:นาที)", placeholder="ตัวอย่าง 14:10", required=True, max_length=5)
     def __init__(self, first_step_data):
         super().__init__()
@@ -502,6 +492,7 @@ class AuctionImagesModal(discord.ui.Modal, title="ข้อมูลการป
         
         asyncio.create_task(revoke_permissions_after_timeout(interaction.user.id, img_channel.id, interaction.guild_id))
 
+# ... (AuctionDetailsModal เหมือนเดิม)
 class AuctionDetailsModal(discord.ui.Modal, title="ข้อมูลการประมูล (1/2)"):
     start_price = discord.ui.TextInput(label="ราคาเริ่มต้น", placeholder="ใส่แค่ตัวเลข", required=True)
     bid_step = discord.ui.TextInput(label="บิดครั้งละ", placeholder="ใส่แค่ตัวเลข", required=True)
@@ -519,6 +510,7 @@ class AuctionDetailsModal(discord.ui.Modal, title="ข้อมูลการ�
         view = ContinueSetupView(first_step_data)
         await interaction.response.send_message("กรอกข้อมูลส่วนแรกเสร็จสิ้น กดปุ่มด้านล่างเพื่อกรอกส่วนที่เหลือ", ephemeral=True, view=view)
 
+# ... (ReportModal เหมือนเดิม)
 class ReportModal(discord.ui.Modal, title="แจ้งรายงาน (Report)"):
     reason = discord.ui.TextInput(label="รายละเอียด/เหตุผล", style=discord.TextStyle.paragraph, required=True)
     async def on_submit(self, interaction: discord.Interaction):
@@ -538,13 +530,14 @@ class ReportModal(discord.ui.Modal, title="แจ้งรายงาน (Repor
             embed.add_field(name=TEXT_CONFIG["report_embed_field_detail"], value=self.reason.value, inline=False)
             embed.timestamp = datetime.now()
             
-            support_msg = get_support_mention()
+            support_msg = get_support_mention() # แท็ก Support Admin
             await report_channel.send(content=support_msg, embed=embed)
             
             await interaction.response.send_message(TEXT_CONFIG["report_success"], ephemeral=True)
         else:
             await interaction.response.send_message(TEXT_CONFIG["report_error_not_found"], ephemeral=True)
 
+# ... (TicketCancelReasonModal เหมือนเดิม)
 class TicketCancelReasonModal(discord.ui.Modal, title="เหตุผลการยกเลิก"):
     reason = discord.ui.TextInput(label="เหตุผล", style=discord.TextStyle.paragraph, required=True)
     async def on_submit(self, interaction: discord.Interaction):
@@ -560,6 +553,7 @@ class TicketCancelReasonModal(discord.ui.Modal, title="เหตุผลกา�
 
 # --- VIEWS ---
 
+# ... (TransactionView เหมือนเดิม)
 class TransactionView(discord.ui.View):
     def __init__(self, auction_id):
         super().__init__(timeout=None)
@@ -592,13 +586,11 @@ class TransactionView(discord.ui.View):
     async def middleman_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         auction = data["active_auctions"].get(str(interaction.channel_id))
         if not auction: return
-        # อนุญาตให้ผู้ชนะและแอดมินเรียกกลางได้
         if interaction.user.id != auction.get("winner_id") and not is_admin(interaction.user):
             return await no_permission(interaction)
             
         msg = TEXT_CONFIG["trans_middleman_call"]
-        for sup_id in data["support_ids"]:
-            msg += f" <@{sup_id}>"
+        msg += get_support_mention() # แท็ก Support Admin
             
         await interaction.channel.send(msg)
         if not interaction.response.is_done():
@@ -612,6 +604,7 @@ class TransactionView(discord.ui.View):
             return await no_permission(interaction)
         await interaction.response.send_modal(CancelReasonModal(auction))
 
+# ... (AuctionControlView เหมือนเดิม)
 class AuctionControlView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
     @discord.ui.button(label="ปิดการประมูล", style=discord.ButtonStyle.danger, custom_id="close_auction_manual")
@@ -623,6 +616,7 @@ class AuctionControlView(discord.ui.View):
         await interaction.response.send_message("กำลังปิดการประมูล...", ephemeral=True)
         await end_auction_process(interaction.channel, auction)
 
+# ... (ApprovalView เหมือนเดิม)
 class ApprovalView(discord.ui.View):
     def __init__(self, auction_data):
         super().__init__(timeout=None)
@@ -639,6 +633,7 @@ class ApprovalView(discord.ui.View):
         if not category: 
             return await interaction.followup.send(TEXT_CONFIG["auction_approve_category_error"], ephemeral=True)
             
+        # สร้างชื่อห้องด้วยราคาเริ่มต้น
         channel_name = f"การประมูลครั้งที่-{count}-ราคา-{self.auction_data['start_price']}"
         try: channel = await interaction.guild.create_text_channel(channel_name, category=category)
         except Exception as e: 
@@ -679,6 +674,7 @@ class ApprovalView(discord.ui.View):
         if not is_admin(interaction.user): return await no_permission(interaction)
         await interaction.response.send_modal(DenyReasonModal(self.auction_data['owner_id'], self.auction_data))
 
+# ... (ContinueSetupView เหมือนเดิม)
 class ContinueSetupView(discord.ui.View):
     def __init__(self, first_step_data):
         super().__init__(timeout=None)
@@ -688,6 +684,7 @@ class ContinueSetupView(discord.ui.View):
         try: await interaction.response.send_modal(AuctionImagesModal(self.first_step_data))
         except discord.HTTPException as e: pass
 
+# ... (StartAuctionView เหมือนเดิม)
 class StartAuctionView(discord.ui.View):
     def __init__(self, label):
         super().__init__(timeout=None)
@@ -699,6 +696,7 @@ class StartAuctionView(discord.ui.View):
 
 # --- VIEWS (INFO) ---
 
+# ... (InfoSelectView เหมือนเดิม)
 class InfoSelectView(discord.ui.View):
     def __init__(self, info_data):
         super().__init__(timeout=None)
@@ -731,6 +729,7 @@ class InfoSelectView(discord.ui.View):
 
 # --- VIEWS (FORUM) ---
 
+# ... (ForumPostControlView เหมือนเดิม)
 class ForumPostControlView(discord.ui.View):
     def __init__(self, buy_label="🛒 กดสั่งซื้อตรงนี้", report_label="🚨 รายงาน"):
         super().__init__(timeout=None)
@@ -786,6 +785,7 @@ class ForumPostControlView(discord.ui.View):
         success_msg = TEXT_CONFIG["forum_ticket_channel_success"].format(channel_mention=ticket_channel.mention)
         await interaction.followup.send(success_msg, ephemeral=True)
 
+# ... (ForumTicketControlView เหมือนเดิม)
 class ForumTicketControlView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
     @discord.ui.button(label="✅ เสร็จสิ้น", style=discord.ButtonStyle.green, custom_id="ft_finish")
@@ -812,6 +812,7 @@ class ForumTicketControlView(discord.ui.View):
     async def cancel_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(TicketCancelReasonModal())
 
+# ... (AdminConfirmView เหมือนเดิม)
 class AdminConfirmView(discord.ui.View):
     def __init__(self, action, requester, reason=None):
         super().__init__(timeout=None)
@@ -851,7 +852,7 @@ class AdminConfirmView(discord.ui.View):
                 embed.add_field(name="ผู้ขาย", value=f"<@{ticket_data['seller_id']}>", inline=True)
                 if self.reason: embed.add_field(name="เหตุผลยกเลิก", value=self.reason, inline=False)
                 
-                support_msg = get_support_mention()
+                support_msg = get_support_mention() # แท็ก Support Admin
                 await feed_channel.send(content=support_msg, embed=embed)
 
         await interaction.channel.send(TEXT_CONFIG["forum_ticket_admin_confirm_success"], delete_after=5)
@@ -921,11 +922,9 @@ async def on_message(message):
             
             # 2. จัดการข้อความเก่าและ Task
             if channel_id in auction_tasks:
-                # ยกเลิก Task นับถอยหลังเก่า (ถ้ามี)
                 auction_tasks[channel_id].cancel()
                 del auction_tasks[channel_id]
             
-            # ลบข้อความนับถอยหลังเก่า (ถ้ามี)
             if auction.get("last_countdown_id"):
                 try:
                     old_c_msg = await message.channel.fetch_message(auction["last_countdown_id"])
@@ -942,31 +941,26 @@ async def on_message(message):
             
             # 3. ตรวจสอบเงื่อนไขการเริ่มนับถอยหลัง
             if bin_price > 0 and amount >= bin_price:
-                # ถ้าถึง BIN ให้สร้างข้อความนับถอยหลัง และเริ่ม Task
-                
-                # ลบข้อความบิดล่าสุดก่อนหน้านี้ (ถ้ามี)
                 if auction["last_msg_id"]:
                     try:
                         old_msg = await message.channel.fetch_message(auction["last_msg_id"])
                         await old_msg.delete()
                     except: pass
                 
-                # เริ่มนับถอยหลัง (ฟังก์ชัน run_countdown จะสร้างข้อความใหม่และบันทึก last_countdown_id)
+                # เริ่มนับถอยหลัง (run_countdown จะสร้างข้อความใหม่)
                 task = bot.loop.create_task(run_countdown(message.channel, message.author.id, amount, auction))
                 auction_tasks[channel_id] = task
                 
             else:
-                # ถ้ายังไม่ถึง BIN ให้อัปเดตข้อความบิดล่าสุด (หรือสร้างใหม่ถ้าไม่มี)
+                # ถ้ายังไม่ถึง BIN ให้อัปเดตข้อความบิดล่าสุด
                 if auction["last_msg_id"]:
                     try:
                         old_msg = await message.channel.fetch_message(auction["last_msg_id"])
                         await old_msg.edit(content=msg_text)
                         new_msg = old_msg
                     except:
-                        # ถ้าหาข้อความเดิมไม่เจอ ให้สร้างใหม่แทน
                         new_msg = await message.reply(msg_text)
                 else:
-                    # สร้างข้อความใหม่และ reply
                     new_msg = await message.reply(msg_text)
                 
                 if new_msg:
@@ -974,23 +968,25 @@ async def on_message(message):
                     
             save_data(data)
             
-            # --- START: การจัดการ Rate Limit ด้วย Debouncing ---
+            # --- START: การจัดการ Rate Limit (3 นาที) ---
             try: 
-                # 1. ตรวจสอบและยกเลิก Task การเปลี่ยนชื่อห้องเก่า (ถ้ามี)
-                if channel_id in name_update_tasks:
-                    name_update_tasks[channel_id].cancel()
+                # 1. ตรวจสอบและยกเลิก Task การเปลี่ยนชื่อห้องเก่า (ถ้ามีการบิดเข้ามาใหม่)
+                if channel_id in tasks_to_update_name:
+                    tasks_to_update_name[channel_id].cancel()
                     
-                # 2. สร้าง Task ใหม่ที่รอนาน 5 วินาที ก่อนเปลี่ยนชื่อห้องจริง
+                # 2. สร้าง Task ใหม่ที่รอนาน 3 นาที (180 วินาที) ก่อนเปลี่ยนชื่อห้องจริง
+                # ถ้าไม่มีการบิดเข้ามาอีกใน 3 นาที ชื่อช่องจะถูกอัปเดต
                 task = bot.loop.create_task(update_channel_name_task(message.channel, auction['count'], amount))
-                name_update_tasks[channel_id] = task
+                tasks_to_update_name[channel_id] = task
             except Exception as e: 
                 print(f"Error managing name update task: {e}")
-            # --- END: การจัดการ Rate Limit ด้วย Debouncing ---
+            # --- END: การจัดการ Rate Limit ---
 
     await bot.process_commands(message)
 
 # --- COMMANDS ---
 
+# ... (คำสั่งอื่นๆ เหมือนเดิม)
 @bot.command()
 async def sync(ctx):
     if ctx.author.id != bot.owner_id and ctx.author.id not in data["admins"]:
