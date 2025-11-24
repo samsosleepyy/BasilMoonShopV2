@@ -55,8 +55,11 @@ TEXT_CONFIG = {
     "bid_too_low": "ราคาที่คุณบิดต่ำเกินไป❌",
     "bid_message": "# {user_mention} บิด {amount} บ.-",
     "bid_message_overtake": "\n{prev_winner_mention} ถูกแซงแล้ว!",
-    "bid_bin_reached": "⚠️ ราคาถึงกำหนดปิดประมูล ({bin_price} บ.)! เริ่มนับถอยหลังยืนยันผู้ชนะ...",
-    "countdown_message": "# {user_mention} ราคา {price} ครั้งที่ {i}",
+    # ลบ "bid_bin_reached" ตามคำขอ
+    # เพิ่ม "bin_alert_message" สำหรับข้อความแจ้งเตือน BIN price
+    "bin_alert_message": "⚠️ ราคาถึงกำหนดปิดประมูล ({bin_price} บ.)! เริ่มนับถอยหลังยืนยันผู้ชนะ...\n",
+    # ปรับปรุง "countdown_message" ให้รองรับ {bin_alert}
+    "countdown_message": "{bin_alert}# {user_mention} ราคา {price} ครั้งที่ {i}",
     "countdown_end_message": "# {user_mention} ราคา {price} **ปิดการประมูล!**",
     "auction_end_no_winner": "# ปิดประมูล (ไม่มีผู้ชนะ)",
     "auction_end_winner": "# {winner_mention} ชนะการประมูลครั้งที่ : {count}\n### จบที่ราคา : {price} บ.",
@@ -193,15 +196,26 @@ async def update_channel_name_task(channel, count, amount):
         if channel.id in name_update_tasks:
             del name_update_tasks[channel.id]
 
-# ฟังก์ชันนับถอยหลัง
-async def run_countdown(channel, user_id, price, auction_data):
+# ฟังก์ชันนับถอยหลัง (ถูกแก้ไข)
+async def run_countdown(channel, user_id, price, auction_data, is_bin_start=False):
     channel_id = str(channel.id)
     start_num = data.get("countdown_start", 15) # ดึงค่าเวลาจาก config
     
     # ส่งข้อความนับถอยหลังเริ่มต้น
     msg = None
     try:
-        countdown_msg_text = TEXT_CONFIG["countdown_message"].format(user_mention=f"<@{user_id}>", price=price, i=start_num)
+        # สร้างข้อความแจ้งเตือน BIN (ถ้ามีการเริ่มนับถอยหลังด้วย BIN price)
+        bin_alert = ""
+        if is_bin_start:
+            bin_price = auction_data["bin_price"]
+            bin_alert = TEXT_CONFIG["bin_alert_message"].format(bin_price=bin_price)
+            
+        countdown_msg_text = TEXT_CONFIG["countdown_message"].format(
+            user_mention=f"<@{user_id}>", 
+            price=price, 
+            i=start_num,
+            bin_alert=bin_alert # ใส่ข้อความแจ้งเตือน (หรือ "")
+        )
         msg = await channel.send(countdown_msg_text)
         # บันทึก ID ข้อความเพื่อนับถอยหลัง
         auction_data["last_countdown_id"] = msg.id
@@ -222,8 +236,8 @@ async def run_countdown(channel, user_id, price, auction_data):
                 await msg.edit(content=end_msg_text)
                 await end_auction_process(channel, auction_data)
             else:
-                # แก้ไขตัวเลข
-                countdown_msg_text = TEXT_CONFIG["countdown_message"].format(user_mention=f"<@{user_id}>", price=price, i=i)
+                # แก้ไขตัวเลข (ส่งข้อความอัพเดท โดย bin_alert ต้องเป็นว่างเปล่า)
+                countdown_msg_text = TEXT_CONFIG["countdown_message"].format(user_mention=f"<@{user_id}>", price=price, i=i, bin_alert="")
                 await msg.edit(content=countdown_msg_text)
         except discord.NotFound:
             break # ข้อความถูกลบ
@@ -917,15 +931,6 @@ async def on_message(message):
                     old_msg = await message.channel.fetch_message(auction["last_msg_id"])
                     await old_msg.delete()
                 except: pass
-                
-            msg_text = TEXT_CONFIG["bid_message"].format(user_mention=f"<@{message.author.id}>", amount=amount)
-            
-            if prev_winner_id and prev_winner_id != message.author.id:
-                msg_text += TEXT_CONFIG["bid_message_overtake"].format(prev_winner_mention=f"<@{prev_winner_id}>")
-                
-            new_msg = await message.reply(msg_text)
-            auction["last_msg_id"] = new_msg.id
-            save_data(data)
             
             # --- START: การจัดการ Rate Limit ด้วย Debouncing ---
             try: 
@@ -940,16 +945,30 @@ async def on_message(message):
                 print(f"Error managing name update task: {e}")
             # --- END: การจัดการ Rate Limit ด้วย Debouncing ---
 
-            # 3. ตรวจสอบเงื่อนไขการเริ่มนับถอยหลัง
+            # 3. จัดการข้อความตอบกลับและการนับถอยหลัง (ถูกแก้ไข)
             
-            # ถ้าบิดถึง 'ราคาปิดประมูล' หรือเกินไปแล้ว ให้เริ่มนับถอยหลัง (แทนการจบการประมูลทันที)
+            # ตรวจสอบเงื่อนไขการเริ่มนับถอยหลัง (ถึง BIN Price)
             if bin_price > 0 and amount >= bin_price:
-                # แจ้งเตือนว่าถึง BIN แล้วเริ่มนับถอยหลัง
-                await message.channel.send(TEXT_CONFIG["bid_bin_reached"].format(bin_price=bin_price))
-                
-                # เริ่มนับถอยหลัง
-                task = bot.loop.create_task(run_countdown(message.channel, message.author.id, amount, auction))
+                # ถ้าถึง BIN Price ให้ข้ามการส่ง bid_message และเริ่มนับถอยหลังทันที
+                # is_bin_start = True เพื่อให้ run_countdown ใส่ข้อความแจ้งเตือน BIN ในข้อความแรก
+                task = bot.loop.create_task(run_countdown(message.channel, message.author.id, amount, auction, is_bin_start=True))
                 auction_tasks[channel_id] = task
+                
+                # ลบข้อความบิดของผู้ใช้ล่าสุด
+                try: await message.delete()
+                except: pass 
+
+            else:
+                # ถ้ายังไม่ถึง BIN Price ให้ส่งข้อความบิดปกติ
+                msg_text = TEXT_CONFIG["bid_message"].format(user_mention=f"<@{message.author.id}>", amount=amount)
+                
+                if prev_winner_id and prev_winner_id != message.author.id:
+                    msg_text += TEXT_CONFIG["bid_message_overtake"].format(prev_winner_mention=f"<@{prev_winner_id}>")
+                    
+                new_msg = await message.reply(msg_text)
+                auction["last_msg_id"] = new_msg.id
+                
+            save_data(data)
 
     await bot.process_commands(message)
 
