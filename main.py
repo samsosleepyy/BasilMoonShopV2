@@ -33,6 +33,7 @@ DATA_FILE = "auction_data.json"
 # ตัวแปรชั่วคราว (RAM Only)
 pending_auctions = {}
 auction_tasks = {} # เก็บ Task การนับถอยหลังของแต่ละห้อง {channel_id: task}
+name_update_tasks = {} # {channel_id: task} สำหรับจัดการ Rate Limit การเปลี่ยนชื่อห้อง
 
 def load_data():
     if not os.path.exists(DATA_FILE):
@@ -105,6 +106,18 @@ async def revoke_permissions_after_timeout(user_id, channel_id, guild_id):
             del pending_auctions[user_id]
 
 # --- LOGIC FUNCTIONS ---
+
+async def update_channel_name_task(channel, count, amount):
+    # หน่วงเวลา 5 วินาทีก่อนเปลี่ยนชื่อเพื่อจัดการ Rate Limit
+    await asyncio.sleep(5) 
+    try:
+        await channel.edit(name=f"การประมูลครั้งที่-{count}-ราคา-{amount}")
+    except:
+        pass
+    finally:
+        # ลบ Task เมื่อเสร็จสิ้นหรือเกิดข้อผิดพลาด
+        if channel.id in name_update_tasks:
+            del name_update_tasks[channel.id]
 
 # ฟังก์ชันนับถอยหลัง
 async def run_countdown(channel, user_id, price, auction_data):
@@ -194,6 +207,11 @@ async def end_auction_process(channel, auction_data):
         auction_tasks[cid].cancel()
         del auction_tasks[cid]
 
+    # ถ้ามี task อัปเดตชื่อห้องค้างอยู่ ให้ยกเลิก
+    if cid in name_update_tasks:
+        name_update_tasks[cid].cancel()
+        del name_update_tasks[cid]
+
     if data["active_auctions"][cid].get("status") == "ended": return 
 
     data["active_auctions"][cid]["status"] = "ended"
@@ -241,7 +259,7 @@ async def end_auction_process(channel, auction_data):
             use_external_emojis=False, add_reactions=False, use_application_commands=False,
             manage_channels=False, manage_permissions=False, manage_webhooks=False,
             create_instant_invite=False, create_public_threads=False, create_private_threads=False,
-            send_messages_in_threads=False, manage_threads=False
+            send_messages_in_threads=False, manage_threads=False, use_external_stickers=False
         )
         # ตั้งค่า deny_all ให้กับทุก Role ยกเว้น Role ที่มี Admin
         for role in channel.guild.roles:
@@ -311,6 +329,9 @@ class CancelReasonModal(discord.ui.Modal, title="เหตุผลการย�
             if str(interaction.channel_id) in auction_tasks:
                 auction_tasks[str(interaction.channel_id)].cancel() # ยกเลิกนับถอยหลังถ้ามี
                 del auction_tasks[str(interaction.channel_id)]
+            if str(interaction.channel_id) in name_update_tasks:
+                name_update_tasks[str(interaction.channel_id)].cancel() # ยกเลิก Task เปลี่ยนชื่อห้องถ้ามี
+                del name_update_tasks[str(interaction.channel_id)]
             save_data(data)
 
 class DenyReasonModal(discord.ui.Modal, title="เหตุผลไม่อนุมัติ"):
@@ -331,7 +352,7 @@ class DenyReasonModal(discord.ui.Modal, title="เหตุผลไม่อน
 
 class AuctionImagesModal(discord.ui.Modal, title="ข้อมูลการประมูล (2/2)"):
     rights = discord.ui.TextInput(label="สิทธิ์", placeholder="เช่น สิทธิ์ขาด, สิทธิ์เชิงพาณิชย์", required=True)
-    extra = discord.ui.TextInput(label="เพิ่มเติม", required=False)
+    extra = discord.ui.TextInput(label="เพิ่มเติม", required=false)
     end_time_input = discord.ui.TextInput(label="เวลาปิด (ชั่วโมง:นาที)", placeholder="ตัวอย่าง 14:10", required=True, max_length=5)
     def __init__(self, first_step_data):
         super().__init__()
@@ -758,7 +779,7 @@ async def on_message(message):
             auction["winner_name"] = message.author.name
             auction["history"].append({"user": message.author.id, "price": amount})
             
-            # 2. จัดการข้อความเก่า
+            # 2. จัดการข้อความเก่าและ Task
             if channel_id in auction_tasks:
                 auction_tasks[channel_id].cancel()
                 del auction_tasks[channel_id]
@@ -781,9 +802,20 @@ async def on_message(message):
             new_msg = await message.reply(msg_text)
             auction["last_msg_id"] = new_msg.id
             save_data(data)
-            try: await message.channel.edit(name=f"การประมูลครั้งที่-{auction['count']}-ราคา-{amount}")
-            except: pass
             
+            # --- START: การจัดการ Rate Limit ด้วย Debouncing ---
+            try: 
+                # 1. ตรวจสอบและยกเลิก Task การเปลี่ยนชื่อห้องเก่า (ถ้ามี)
+                if channel_id in name_update_tasks:
+                    name_update_tasks[channel_id].cancel()
+                    
+                # 2. สร้าง Task ใหม่ที่รอนาน 5 วินาที ก่อนเปลี่ยนชื่อห้องจริง
+                task = bot.loop.create_task(update_channel_name_task(message.channel, auction['count'], amount))
+                name_update_tasks[channel_id] = task
+            except Exception as e: 
+                print(f"Error managing name update task: {e}")
+            # --- END: การจัดการ Rate Limit ด้วย Debouncing ---
+
             # 3. ตรวจสอบเงื่อนไขการเริ่มนับถอยหลัง
             
             # ถ้าบิดถึง 'ราคาปิดประมูล' หรือเกินไปแล้ว ให้เริ่มนับถอยหลัง (แทนการจบการประมูลทันที)
