@@ -1046,18 +1046,31 @@ async def addadmin(interaction: discord.Interaction, user: discord.User):
     else:
         if not interaction.response.is_done(): await interaction.response.send_message(f"{user.mention} เป็นแอดมินอยู่แล้ว", ephemeral=True)
 
+# บรรทัด ~1047: การแก้ไขคำสั่ง supportadmin
+
 @bot.tree.command(name="supportadmin", description="เพิ่ม support admin (User หรือ Role)")
+@app_commands.describe(target: discord.Member = None, role: discord.Role = None)
 async def supportadmin(interaction: discord.Interaction, target: discord.Member = None, role: discord.Role = None):
     if not is_admin(interaction.user): return await no_permission(interaction)
+    
+    # 1. จัดการกรณีที่ไม่มี User/Role ถูกระบุ
     target_id = target.id if target else role.id if role else None
     if not target_id: return await interaction.response.send_message("กรุณาระบุ User หรือ Role", ephemeral=True)
+    
+    # 2. Defer ทันทีเพื่อตอบรับ Interaction และป้องกัน Timeout
+    await interaction.response.defer(ephemeral=True) 
+    
+    name = target.mention if target else role.mention
+
     if target_id not in data["support_ids"]:
         data["support_ids"].append(target_id)
         save_data(data)
-        name = target.mention if target else role.mention
-        await interaction.response.send_message(f"เพิ่ม {name} เป็น Support Admin เรียบร้อย ✅")
-    else: await interaction.response.send_message("มีอยู่ในรายการอยู่แล้ว", ephemeral=True)
-
+        # ใช้ followup.send หลังจากการ defer
+        await interaction.followup.send(f"เพิ่ม {name} เป็น Support Admin เรียบร้อย ✅")
+    else: 
+        # ใช้ followup.send หลังจากการ defer
+        await interaction.followup.send("มีอยู่ในรายการอยู่แล้ว", ephemeral=True)
+        
 @bot.tree.command(name="lock", description="ตั้งเวลาคูลดาวน์ก่อนล็อคห้อง (วินาที)")
 async def lock_cmd(interaction: discord.Interaction, time_sec: int = 120):
     if not is_admin(interaction.user): return await no_permission(interaction)
