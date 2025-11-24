@@ -55,11 +55,9 @@ TEXT_CONFIG = {
     "bid_too_low": "ราคาที่คุณบิดต่ำเกินไป❌",
     "bid_message": "# {user_mention} บิด {amount} บ.-",
     "bid_message_overtake": "\n{prev_winner_mention} ถูกแซงแล้ว!",
-    # ลบ "bid_bin_reached" ตามคำขอ
-    # เพิ่ม "bin_alert_message" สำหรับข้อความแจ้งเตือน BIN price
-    "bin_alert_message": "⚠️ ราคาถึงกำหนดปิดประมูล ({bin_price} บ.)! เริ่มนับถอยหลังยืนยันผู้ชนะ...\n",
-    # ปรับปรุง "countdown_message" ให้รองรับ {bin_alert}
-    "countdown_message": "{bin_alert}# {user_mention} ราคา {price} ครั้งที่ {i}",
+    # แก้ไข: รวมข้อความ bid_bin_reached เข้ากับ countdown_message แล้ว
+    "countdown_message": """⚠️ ราคาถึงกำหนดปิดประมูล ({bin_price} บ.)! เริ่มนับถอยหลังยืนยันผู้ชนะ...
+# {user_mention} ราคา {price} ครั้งที่ {i}""",
     "countdown_end_message": "# {user_mention} ราคา {price} **ปิดการประมูล!**",
     "auction_end_no_winner": "# ปิดประมูล (ไม่มีผู้ชนะ)",
     "auction_end_winner": "# {winner_mention} ชนะการประมูลครั้งที่ : {count}\n### จบที่ราคา : {price} บ.",
@@ -174,9 +172,9 @@ async def revoke_permissions_after_timeout(user_id, channel_id, guild_id):
         
         if channel and member:
             try:
-                await channel.set_permissions(member, overwrite=None)
                 revoke_msg = TEXT_CONFIG["perm_revoke_message"].format(user_mention=f"<@{user_id}>")
                 await channel.send(revoke_msg, delete_after=10)
+                await channel.set_permissions(member, overwrite=None)
             except:
                 pass
         if user_id in pending_auctions:
@@ -196,31 +194,32 @@ async def update_channel_name_task(channel, count, amount):
         if channel.id in name_update_tasks:
             del name_update_tasks[channel.id]
 
-# ฟังก์ชันนับถอยหลัง (ถูกแก้ไข)
-async def run_countdown(channel, user_id, price, auction_data, is_bin_start=False):
+# ฟังก์ชันนับถอยหลัง
+async def run_countdown(channel, user_id, price, auction_data):
     channel_id = str(channel.id)
     start_num = data.get("countdown_start", 15) # ดึงค่าเวลาจาก config
+    bin_price = auction_data["bin_price"] # ดึง bin_price มาใช้ในการ format
     
     # ส่งข้อความนับถอยหลังเริ่มต้น
     msg = None
     try:
-        # สร้างข้อความแจ้งเตือน BIN (ถ้ามีการเริ่มนับถอยหลังด้วย BIN price)
-        bin_alert = ""
-        if is_bin_start:
-            bin_price = auction_data["bin_price"]
-            bin_alert = TEXT_CONFIG["bin_alert_message"].format(bin_price=bin_price)
-            
+        # ใช้ข้อความรวมที่มีทั้งแจ้งเตือน BIN และตัวนับถอยหลัง
         countdown_msg_text = TEXT_CONFIG["countdown_message"].format(
             user_mention=f"<@{user_id}>", 
             price=price, 
-            i=start_num,
-            bin_alert=bin_alert # ใส่ข้อความแจ้งเตือน (หรือ "")
+            i=start_num, 
+            bin_price=bin_price
         )
-        msg = await channel.send(countdown_msg_text)
+        # ใช้ .send() แทนการ .reply() เพราะเราลบข้อความเก่าไปแล้ว
+        msg = await channel.send(countdown_msg_text) 
+        
         # บันทึก ID ข้อความเพื่อนับถอยหลัง
         auction_data["last_countdown_id"] = msg.id
+        # ลบ last_msg_id เพื่อให้แน่ใจว่าการบิดต่อไปจะรู้ว่าข้อความหลักคือ countdown
+        auction_data["last_msg_id"] = None 
         save_data(data)
-    except:
+    except Exception as e:
+        print(f"Error sending initial countdown message: {e}")
         return # ส่งไม่ได้จบการทำงาน
 
     # ลูปนับถอยหลัง
@@ -236,8 +235,13 @@ async def run_countdown(channel, user_id, price, auction_data, is_bin_start=Fals
                 await msg.edit(content=end_msg_text)
                 await end_auction_process(channel, auction_data)
             else:
-                # แก้ไขตัวเลข (ส่งข้อความอัพเดท โดย bin_alert ต้องเป็นว่างเปล่า)
-                countdown_msg_text = TEXT_CONFIG["countdown_message"].format(user_mention=f"<@{user_id}>", price=price, i=i, bin_alert="")
+                # แก้ไขตัวเลข
+                countdown_msg_text = TEXT_CONFIG["countdown_message"].format(
+                    user_mention=f"<@{user_id}>", 
+                    price=price, 
+                    i=i, 
+                    bin_price=bin_price
+                )
                 await msg.edit(content=countdown_msg_text)
         except discord.NotFound:
             break # ข้อความถูกลบ
@@ -917,20 +921,58 @@ async def on_message(message):
             
             # 2. จัดการข้อความเก่าและ Task
             if channel_id in auction_tasks:
+                # ยกเลิก Task นับถอยหลังเก่า (ถ้ามี)
                 auction_tasks[channel_id].cancel()
                 del auction_tasks[channel_id]
             
+            # ลบข้อความนับถอยหลังเก่า (ถ้ามี)
             if auction.get("last_countdown_id"):
                 try:
                     old_c_msg = await message.channel.fetch_message(auction["last_countdown_id"])
                     await old_c_msg.delete()
+                    auction["last_countdown_id"] = None
                 except: pass
 
-            if auction["last_msg_id"]:
-                try:
-                    old_msg = await message.channel.fetch_message(auction["last_msg_id"])
-                    await old_msg.delete()
-                except: pass
+            msg_text = TEXT_CONFIG["bid_message"].format(user_mention=f"<@{message.author.id}>", amount=amount)
+            
+            if prev_winner_id and prev_winner_id != message.author.id:
+                msg_text += TEXT_CONFIG["bid_message_overtake"].format(prev_winner_mention=f"<@{prev_winner_id}>")
+                
+            new_msg = None
+            
+            # 3. ตรวจสอบเงื่อนไขการเริ่มนับถอยหลัง
+            if bin_price > 0 and amount >= bin_price:
+                # ถ้าถึง BIN ให้สร้างข้อความนับถอยหลัง และเริ่ม Task
+                
+                # ลบข้อความบิดล่าสุดก่อนหน้านี้ (ถ้ามี)
+                if auction["last_msg_id"]:
+                    try:
+                        old_msg = await message.channel.fetch_message(auction["last_msg_id"])
+                        await old_msg.delete()
+                    except: pass
+                
+                # เริ่มนับถอยหลัง (ฟังก์ชัน run_countdown จะสร้างข้อความใหม่และบันทึก last_countdown_id)
+                task = bot.loop.create_task(run_countdown(message.channel, message.author.id, amount, auction))
+                auction_tasks[channel_id] = task
+                
+            else:
+                # ถ้ายังไม่ถึง BIN ให้อัปเดตข้อความบิดล่าสุด (หรือสร้างใหม่ถ้าไม่มี)
+                if auction["last_msg_id"]:
+                    try:
+                        old_msg = await message.channel.fetch_message(auction["last_msg_id"])
+                        await old_msg.edit(content=msg_text)
+                        new_msg = old_msg
+                    except:
+                        # ถ้าหาข้อความเดิมไม่เจอ ให้สร้างใหม่แทน
+                        new_msg = await message.reply(msg_text)
+                else:
+                    # สร้างข้อความใหม่และ reply
+                    new_msg = await message.reply(msg_text)
+                
+                if new_msg:
+                    auction["last_msg_id"] = new_msg.id
+                    
+            save_data(data)
             
             # --- START: การจัดการ Rate Limit ด้วย Debouncing ---
             try: 
@@ -944,31 +986,6 @@ async def on_message(message):
             except Exception as e: 
                 print(f"Error managing name update task: {e}")
             # --- END: การจัดการ Rate Limit ด้วย Debouncing ---
-
-            # 3. จัดการข้อความตอบกลับและการนับถอยหลัง (ถูกแก้ไข)
-            
-            # ตรวจสอบเงื่อนไขการเริ่มนับถอยหลัง (ถึง BIN Price)
-            if bin_price > 0 and amount >= bin_price:
-                # ถ้าถึง BIN Price ให้ข้ามการส่ง bid_message และเริ่มนับถอยหลังทันที
-                # is_bin_start = True เพื่อให้ run_countdown ใส่ข้อความแจ้งเตือน BIN ในข้อความแรก
-                task = bot.loop.create_task(run_countdown(message.channel, message.author.id, amount, auction, is_bin_start=True))
-                auction_tasks[channel_id] = task
-                
-                # ลบข้อความบิดของผู้ใช้ล่าสุด
-                try: await message.delete()
-                except: pass 
-
-            else:
-                # ถ้ายังไม่ถึง BIN Price ให้ส่งข้อความบิดปกติ
-                msg_text = TEXT_CONFIG["bid_message"].format(user_mention=f"<@{message.author.id}>", amount=amount)
-                
-                if prev_winner_id and prev_winner_id != message.author.id:
-                    msg_text += TEXT_CONFIG["bid_message_overtake"].format(prev_winner_mention=f"<@{prev_winner_id}>")
-                    
-                new_msg = await message.reply(msg_text)
-                auction["last_msg_id"] = new_msg.id
-                
-            save_data(data)
 
     await bot.process_commands(message)
 
@@ -1046,31 +1063,18 @@ async def addadmin(interaction: discord.Interaction, user: discord.User):
     else:
         if not interaction.response.is_done(): await interaction.response.send_message(f"{user.mention} เป็นแอดมินอยู่แล้ว", ephemeral=True)
 
-# บรรทัด ~1047: การแก้ไขคำสั่ง supportadmin
-
 @bot.tree.command(name="supportadmin", description="เพิ่ม support admin (User หรือ Role)")
-@app_commands.describe(target: discord.Member = None, role: discord.Role = None)
 async def supportadmin(interaction: discord.Interaction, target: discord.Member = None, role: discord.Role = None):
     if not is_admin(interaction.user): return await no_permission(interaction)
-    
-    # 1. จัดการกรณีที่ไม่มี User/Role ถูกระบุ
     target_id = target.id if target else role.id if role else None
     if not target_id: return await interaction.response.send_message("กรุณาระบุ User หรือ Role", ephemeral=True)
-    
-    # 2. Defer ทันทีเพื่อตอบรับ Interaction และป้องกัน Timeout
-    await interaction.response.defer(ephemeral=True) 
-    
-    name = target.mention if target else role.mention
-
     if target_id not in data["support_ids"]:
         data["support_ids"].append(target_id)
         save_data(data)
-        # ใช้ followup.send หลังจากการ defer
-        await interaction.followup.send(f"เพิ่ม {name} เป็น Support Admin เรียบร้อย ✅")
-    else: 
-        # ใช้ followup.send หลังจากการ defer
-        await interaction.followup.send("มีอยู่ในรายการอยู่แล้ว", ephemeral=True)
-        
+        name = target.mention if target else role.mention
+        await interaction.response.send_message(f"เพิ่ม {name} เป็น Support Admin เรียบร้อย ✅")
+    else: await interaction.response.send_message("มีอยู่ในรายการอยู่แล้ว", ephemeral=True)
+
 @bot.tree.command(name="lock", description="ตั้งเวลาคูลดาวน์ก่อนล็อคห้อง (วินาที)")
 async def lock_cmd(interaction: discord.Interaction, time_sec: int = 120):
     if not is_admin(interaction.user): return await no_permission(interaction)
