@@ -30,8 +30,9 @@ TOKEN = os.environ.get('TOKEN') or 'YOUR_BOT_TOKEN_HERE'
 # --- DATA MANAGEMENT ---
 DATA_FILE = "auction_data.json"
 
-# ตัวแปรชั่วคราวสำหรับเก็บข้อมูลระหว่างรออัปโหลดรูป (RAM Only)
+# ตัวแปรชั่วคราว (RAM Only)
 pending_auctions = {}
+auction_tasks = {} # [NEW] เก็บ Task การนับถอยหลังของแต่ละห้อง {channel_id: task}
 
 def load_data():
     if not os.path.exists(DATA_FILE):
@@ -43,6 +44,7 @@ def load_data():
             "auction_count": 0,
             "forum_ticket_count": 0, 
             "lock_time": 120,
+            "countdown_start": 15, # [NEW] ค่าเริ่มต้นนับถอยหลัง 15 วินาที
             "active_auctions": {},
             "active_forum_tickets": {}
         }
@@ -104,6 +106,41 @@ async def revoke_permissions_after_timeout(user_id, channel_id, guild_id):
 
 # --- LOGIC FUNCTIONS ---
 
+# [NEW] ฟังก์ชันนับถอยหลัง
+async def run_countdown(channel, user_id, price, auction_data):
+    channel_id = str(channel.id)
+    start_num = data.get("countdown_start", 15) # ดึงค่าเวลาจาก config
+    
+    # ส่งข้อความนับถอยหลังเริ่มต้น
+    msg = None
+    try:
+        msg = await channel.send(f"# <@{user_id}> ราคา {price} ครั้งที่ {start_num}")
+        # บันทึก ID ข้อความเพื่อนับถอยหลัง (อาจเอาไปใช้ลบในอนาคตถ้าจำเป็น)
+        auction_data["last_countdown_id"] = msg.id
+        save_data(data)
+    except:
+        return # ส่งไม่ได้จบการทำงาน
+
+    # ลูปนับถอยหลัง
+    for i in range(start_num - 1, -1, -1):
+        await asyncio.sleep(1) # รอ 1 วินาที
+        
+        # ถ้า Task ถูก Cancel (มีคนบิดแทรก) loop จะหยุดเองโดยอัตโนมัติผ่าน CancelledError (ใน on_message)
+        
+        try:
+            if i == 0:
+                # หมดเวลาแล้ว!
+                await msg.edit(content=f"# <@{user_id}> ราคา {price} **ปิดการประมูล!**")
+                await end_auction_process(channel, auction_data)
+            else:
+                # แก้ไขตัวเลข
+                await msg.edit(content=f"# <@{user_id}> ราคา {price} ครั้งที่ {i}")
+        except discord.NotFound:
+            break # ข้อความถูกลบ
+        except Exception as e:
+            print(f"Countdown Error: {e}")
+            break
+
 async def submit_to_approval(guild, full_data):
     approval_channel_id = data["setup"].get("approval_channel")
     if not approval_channel_id: return None 
@@ -130,11 +167,10 @@ async def submit_to_approval(guild, full_data):
     main_embed.add_field(name="เวลาปิด", value=f"<t:{full_data['end_timestamp']}:R>", inline=True)
     main_embed.add_field(name="เพิ่มเติม", value=full_data['extra'], inline=False)
 
-    # [แก้ไข] เพิ่มการแท็ก Support Admin ในช่องอนุมัติ
     support_msg = get_support_mention()
     
     sent_message = await approval_channel.send(
-        content=support_msg, # แท็กเรียก
+        content=support_msg,
         embed=main_embed, 
         files=files_to_send, 
         view=ApprovalView(full_data)
@@ -149,6 +185,12 @@ async def submit_to_approval(guild, full_data):
 async def end_auction_process(channel, auction_data):
     cid = str(channel.id)
     if cid not in data["active_auctions"]: return
+    
+    # ถ้ามี task นับถอยหลังค้างอยู่ ให้ยกเลิกก่อน (กันรันซ้อน)
+    if cid in auction_tasks:
+        auction_tasks[cid].cancel()
+        del auction_tasks[cid]
+
     if data["active_auctions"][cid].get("status") == "ended": return 
 
     data["active_auctions"][cid]["status"] = "ended"
@@ -247,14 +289,15 @@ class CancelReasonModal(discord.ui.Modal, title="เหตุผลการย�
                 embed.add_field(name="โดย", value=self.auction_info['owner_name'])
                 embed.add_field(name="สถานะ", value=f"ไม่สำเร็จ (ยกเลิกโดย {interaction.user.name})")
                 embed.add_field(name="เหตุผล", value=self.reason.value)
-                
-                # [แก้ไข] แท็ก Support Admin เมื่อยกเลิกการประมูล
                 support_msg = get_support_mention()
                 await channel.send(content=support_msg, embed=embed)
 
         await interaction.channel.delete()
         if str(interaction.channel_id) in data["active_auctions"]:
             del data["active_auctions"][str(interaction.channel_id)]
+            if str(interaction.channel_id) in auction_tasks:
+                auction_tasks[str(interaction.channel_id)].cancel() # ยกเลิกนับถอยหลังถ้ามี
+                del auction_tasks[str(interaction.channel_id)]
             save_data(data)
 
 class DenyReasonModal(discord.ui.Modal, title="เหตุผลไม่อนุมัติ"):
@@ -349,7 +392,6 @@ class ReportModal(discord.ui.Modal, title="แจ้งรายงาน (Repor
             embed.add_field(name="📝 รายละเอียด/เหตุผล", value=self.reason.value, inline=False)
             embed.timestamp = datetime.now()
             
-            # [แก้ไข] แท็ก Support Admin ในช่อง Report
             support_msg = get_support_mention()
             await report_channel.send(content=support_msg, embed=embed)
             
@@ -635,7 +677,6 @@ class AdminConfirmView(discord.ui.View):
                 embed.add_field(name="ผู้ขาย", value=f"<@{ticket_data['seller_id']}>", inline=True)
                 if self.reason: embed.add_field(name="เหตุผลยกเลิก", value=self.reason, inline=False)
                 
-                # [แก้ไข] แท็ก Support Admin ในช่อง Feedback สำหรับ Forum Ticket Log
                 support_msg = get_support_mention()
                 await feed_channel.send(content=support_msg, embed=embed)
 
@@ -701,6 +742,18 @@ async def on_message(message):
             auction["winner_id"] = message.author.id
             auction["winner_name"] = message.author.name
             auction["history"].append({"user": message.author.id, "price": amount})
+            
+            # [NEW] Cancel old countdown and delete msg
+            if channel_id in auction_tasks:
+                auction_tasks[channel_id].cancel()
+                del auction_tasks[channel_id]
+            
+            if auction.get("last_countdown_id"):
+                try:
+                    old_c_msg = await message.channel.fetch_message(auction["last_countdown_id"])
+                    await old_c_msg.delete()
+                except: pass
+
             if auction["last_msg_id"]:
                 try:
                     old_msg = await message.channel.fetch_message(auction["last_msg_id"])
@@ -718,6 +771,11 @@ async def on_message(message):
                 print("BIN Hit! Ending auction...")
                 await message.channel.send("🎉 ราคาถึงกำหนดปิดประมูลแล้ว (Buy It Now)!")
                 await end_auction_process(message.channel, auction)
+            else:
+                # [NEW] Start new countdown task
+                task = bot.loop.create_task(run_countdown(message.channel, message.author.id, amount, auction))
+                auction_tasks[channel_id] = task
+
     await bot.process_commands(message)
 
 # --- COMMANDS ---
@@ -739,6 +797,13 @@ async def ticketsforum(interaction: discord.Interaction, category: discord.Categ
     data["forum_setup"] = {"category_id": category.id, "forum_channel_id": forum_channel.id, "report_channel_id": report_channel.id, "buy_label": buy_label, "report_label": report_label}
     save_data(data)
     await interaction.response.send_message(f"✅ ตั้งค่า Tickets Forum เรียบร้อย!\n- Forum: {forum_channel.mention}\n- Category สร้างห้อง: {category.mention}\n- Report: {report_channel.mention}", ephemeral=True)
+
+@bot.tree.command(name="cdend", description="ตั้งค่าเวลาเริ่มนับถอยหลัง (วินาที)")
+async def cdend(interaction: discord.Interaction, seconds: int):
+    if not is_admin(interaction.user): return await no_permission(interaction)
+    data["countdown_start"] = seconds
+    save_data(data)
+    await interaction.response.send_message(f"ตั้งค่าเวลานับถอยหลังเริ่มต้นเป็น {seconds} วินาที ✅", ephemeral=True)
 
 @bot.tree.command(name="info", description="สร้างข้อความพร้อม Select Menu สำหรับแสดงข้อมูลเฉพาะผู้ใช้")
 @app_commands.describe(channel="ช่องที่จะส่งข้อความไป", message="ข้อความหลัก", select_placeholder="ข้อความในช่องเลือก", select_label1="ตัวเลือก 1", select_label2="ตัวเลือก 2", info1="รายละเอียด 1", info2="รายละเอียด 2")
