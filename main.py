@@ -352,7 +352,7 @@ class DenyReasonModal(discord.ui.Modal, title="เหตุผลไม่อน
 
 class AuctionImagesModal(discord.ui.Modal, title="ข้อมูลการประมูล (2/2)"):
     rights = discord.ui.TextInput(label="สิทธิ์", placeholder="เช่น สิทธิ์ขาด, สิทธิ์เชิงพาณิชย์", required=True)
-    extra = discord.ui.TextInput(label="เพิ่มเติม", required=false)
+    extra = discord.ui.TextInput(label="เพิ่มเติม", required=False)
     end_time_input = discord.ui.TextInput(label="เวลาปิด (ชั่วโมง:นาที)", placeholder="ตัวอย่าง 14:10", required=True, max_length=5)
     def __init__(self, first_step_data):
         super().__init__()
