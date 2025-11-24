@@ -32,7 +32,7 @@ DATA_FILE = "auction_data.json"
 
 # ตัวแปรชั่วคราว (RAM Only)
 pending_auctions = {}
-auction_tasks = {} # [NEW] เก็บ Task การนับถอยหลังของแต่ละห้อง {channel_id: task}
+auction_tasks = {} # เก็บ Task การนับถอยหลังของแต่ละห้อง {channel_id: task}
 
 def load_data():
     if not os.path.exists(DATA_FILE):
@@ -44,7 +44,7 @@ def load_data():
             "auction_count": 0,
             "forum_ticket_count": 0, 
             "lock_time": 120,
-            "countdown_start": 15, # [NEW] ค่าเริ่มต้นนับถอยหลัง 15 วินาที
+            "countdown_start": 15, # ค่าเริ่มต้นนับถอยหลัง 15 วินาที
             "active_auctions": {},
             "active_forum_tickets": {}
         }
@@ -106,7 +106,7 @@ async def revoke_permissions_after_timeout(user_id, channel_id, guild_id):
 
 # --- LOGIC FUNCTIONS ---
 
-# [NEW] ฟังก์ชันนับถอยหลัง
+# ฟังก์ชันนับถอยหลัง
 async def run_countdown(channel, user_id, price, auction_data):
     channel_id = str(channel.id)
     start_num = data.get("countdown_start", 15) # ดึงค่าเวลาจาก config
@@ -115,7 +115,7 @@ async def run_countdown(channel, user_id, price, auction_data):
     msg = None
     try:
         msg = await channel.send(f"# <@{user_id}> ราคา {price} ครั้งที่ {start_num}")
-        # บันทึก ID ข้อความเพื่อนับถอยหลัง (อาจเอาไปใช้ลบในอนาคตถ้าจำเป็น)
+        # บันทึก ID ข้อความเพื่อนับถอยหลัง
         auction_data["last_countdown_id"] = msg.id
         save_data(data)
     except:
@@ -137,6 +137,9 @@ async def run_countdown(channel, user_id, price, auction_data):
                 await msg.edit(content=f"# <@{user_id}> ราคา {price} ครั้งที่ {i}")
         except discord.NotFound:
             break # ข้อความถูกลบ
+        except asyncio.CancelledError:
+            # Task ถูกยกเลิกโดยการบิดใหม่
+            break
         except Exception as e:
             print(f"Countdown Error: {e}")
             break
@@ -162,7 +165,7 @@ async def submit_to_approval(guild, full_data):
     main_embed.add_field(name="สินค้า", value=full_data['item'], inline=False)
     main_embed.add_field(name="ราคาเริ่มต้น", value=f"{full_data['start_price']} บ.", inline=True)
     main_embed.add_field(name="บิดขั้นต่ำ", value=f"{full_data['bid_step']} บ.", inline=True)
-    main_embed.add_field(name="ราคาปิด (BIN)", value=f"{full_data['bin_price']} บ.", inline=True)
+    main_embed.add_field(name="ราคาปิด", value=f"{full_data['bin_price']} บ.", inline=True)
     main_embed.add_field(name="สิทธิ์", value=full_data['rights'], inline=True)
     main_embed.add_field(name="เวลาปิด", value=f"<t:{full_data['end_timestamp']}:R>", inline=True)
     main_embed.add_field(name="เพิ่มเติม", value=full_data['extra'], inline=False)
@@ -212,8 +215,9 @@ async def end_auction_process(channel, auction_data):
         
         await asyncio.sleep(5)
         await channel.delete()
-        del data["active_auctions"][cid]
-        save_data(data)
+        if cid in data["active_auctions"]:
+            del data["active_auctions"][cid]
+            save_data(data)
         return
 
     await channel.send(f"# <@{winner_id}> ชนะการประมูลครั้งที่ : {auction_data['count']}\n### จบที่ราคา : {auction_data['current_price']} บ.")
@@ -362,7 +366,7 @@ class AuctionImagesModal(discord.ui.Modal, title="ข้อมูลการป
 class AuctionDetailsModal(discord.ui.Modal, title="ข้อมูลการประมูล (1/2)"):
     start_price = discord.ui.TextInput(label="ราคาเริ่มต้น", placeholder="ใส่แค่ตัวเลข", required=True)
     bid_step = discord.ui.TextInput(label="บิดครั้งละ", placeholder="ใส่แค่ตัวเลข", required=True)
-    bin_price = discord.ui.TextInput(label="ราคาปิดประมูล (BIN)", placeholder="ใส่แค่ตัวเลข", required=True)
+    bin_price = discord.ui.TextInput(label="ราคาปิดประมูล", placeholder="ใส่แค่ตัวเลข", required=True)
     item = discord.ui.TextInput(label="สิ่งที่ได้", style=discord.TextStyle.paragraph, required=True)
     async def on_submit(self, interaction: discord.Interaction):
         try:
@@ -732,18 +736,20 @@ async def on_message(message):
             current = int(auction["current_price"])
             step = int(auction["bid_step"])
             bin_price = int(auction["bin_price"])
-            print(f"Bid: {amount}, Current: {current}, BIN: {bin_price}")
+            
             min_next = current + step if len(auction["history"]) > 0 else current
             if amount < min_next: 
                  await message.reply("ราคาที่คุณบิดต่ำเกินไป❌", delete_after=10)
                  return
+                 
+            # 1. บันทึกการบิดปกติ (อัปเดตผู้ชนะและราคา)
             prev_winner_id = auction["winner_id"]
             auction["current_price"] = amount
             auction["winner_id"] = message.author.id
             auction["winner_name"] = message.author.name
             auction["history"].append({"user": message.author.id, "price": amount})
             
-            # [NEW] Cancel old countdown and delete msg
+            # 2. จัดการข้อความเก่า
             if channel_id in auction_tasks:
                 auction_tasks[channel_id].cancel()
                 del auction_tasks[channel_id]
@@ -759,6 +765,7 @@ async def on_message(message):
                     old_msg = await message.channel.fetch_message(auction["last_msg_id"])
                     await old_msg.delete()
                 except: pass
+                
             msg_text = f"# <@{message.author.id}> บิด {amount} บ.-"
             if prev_winner_id and prev_winner_id != message.author.id:
                 msg_text += f"\n<@{prev_winner_id}> ถูกแซงแล้ว!"
@@ -767,12 +774,15 @@ async def on_message(message):
             save_data(data)
             try: await message.channel.edit(name=f"การประมูลครั้งที่-{auction['count']}-ราคา-{amount}")
             except: pass
+            
+            # 3. ตรวจสอบเงื่อนไขการเริ่มนับถอยหลัง
+            
+            # ถ้าบิดถึง 'ราคาปิดประมูล' หรือเกินไปแล้ว ให้เริ่มนับถอยหลัง (แทนการจบการประมูลทันที)
             if bin_price > 0 and amount >= bin_price:
-                print("BIN Hit! Ending auction...")
-                await message.channel.send("🎉 ราคาถึงกำหนดปิดประมูลแล้ว (Buy It Now)!")
-                await end_auction_process(message.channel, auction)
-            else:
-                # [NEW] Start new countdown task
+                # แก้ไขข้อความแจ้งเตือน ไม่ให้มีคำว่า BIN
+                await message.channel.send(f"⚠️ ราคาถึงกำหนดปิดประมูล ({bin_price} บ.)! เริ่มนับถอยหลังยืนยันผู้ชนะ...")
+                
+                # เริ่มนับถอยหลัง
                 task = bot.loop.create_task(run_countdown(message.channel, message.author.id, amount, auction))
                 auction_tasks[channel_id] = task
 
