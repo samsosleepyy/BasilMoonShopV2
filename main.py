@@ -27,6 +27,79 @@ def keep_alive():
 # --- CONFIGURATION ---
 TOKEN = os.environ.get('TOKEN') or 'YOUR_BOT_TOKEN_HERE'
 
+# --- TEXT CONFIGURATION (แก้ไขข้อความตรงนี้) ---
+TEXT_CONFIG = {
+    "no_permission": "คุณไม่มีสิทธิ์ในการใช้คำสั่ง❌",
+    "modal_error_time_format": "รูปแบบเวลาไม่ถูกต้อง",
+    "modal_error_number_format": "กรุณาใส่ราคาเป็นตัวเลขเท่านั้น",
+    "modal_error_no_img_channel": "❌ ยังไม่ได้ตั้งค่าช่องอัปโหลดรูป",
+    "modal_error_img_channel_not_found": "❌ หาช่องอัปโหลดรูปไม่เจอ",
+    "modal_img_prompt_start": "กรุณาส่งรูปภาพสินค้าที่ช่อง : {img_channel_mention} (คุณมีเวลา 3 นาที)",
+    "modal_img_prompt_in_channel": "กรุณาส่งรูปสินค้าของคุณที่นี่...",
+    "perm_revoke_message": "{user_mention} สิทธิ์การส่งรูปถูกยกเลิกเนื่องจากหมดเวลา (3 นาที)",
+    "image_received": "ได้รับรูปภาพแล้ว กำลังส่งคำขออนุมัติ... ✅",
+    "auction_approval_title": "คำขอเปิดประมูลใหม่",
+    "auction_approve_category_error": "หมวดหมู่ประมูลไม่ถูกต้อง",
+    "auction_approve_channel_error": "สร้างห้องไม่สำเร็จ: {error}",
+    "auction_open_message": """# การประมูลครั้งที่ - {count}
+โดย {owner_mention}
+### ราคาเริ่มต้น : {start_price}
+### บิดครั้งละ : {bid_step}
+### ราคาปิดประมูล : {bin_price}
+สิ่งที่ได้รับ : {item}
+สิทธิ์ : {rights}
+เพิ่มเติม : {extra}
+เวลาปิดประมูล : {end_time_relative}
+{ping_msg}""",
+    "auction_approve_success": "อนุมัติแล้ว สร้างห้องที่ {channel_mention}",
+    "bid_too_low": "ราคาที่คุณบิดต่ำเกินไป❌",
+    "bid_message": "# {user_mention} บิด {amount} บ.-",
+    "bid_message_overtake": "\n{prev_winner_mention} ถูกแซงแล้ว!",
+    "bid_bin_reached": "⚠️ ราคาถึงกำหนดปิดประมูล ({bin_price} บ.)! เริ่มนับถอยหลังยืนยันผู้ชนะ...",
+    "countdown_message": "# {user_mention} ราคา {price} ครั้งที่ {i}",
+    "countdown_end_message": "# {user_mention} ราคา {price} **ปิดการประมูล!**",
+    "auction_end_no_winner": "# ปิดประมูล (ไม่มีผู้ชนะ)",
+    "auction_end_winner": "# {winner_mention} ชนะการประมูลครั้งที่ : {count}\n### จบที่ราคา : {price} บ.",
+    "lock_wait_message": "⏳ รอเวลา {lock_wait_sec} วินาที ก่อนทำการล็อคห้อง {lock_end_relative}",
+    "lock_success_message": "ช่องนี้ได้เป็นช่องส่วนตัวแล้วสามารถทำธุรกรรมได้เลย...",
+    "lock_info_message": """
+ปุ่มสีเขียว ✅ เป็นของผู้เปิดประมูล
+ปุ่มสีเทา 💰 เป็นของผู้ชนะประมูล
+ปุ่มสีแดง ❌ เป็นของผู้เปิดประมูลและแอดมิน
+        """,
+    "lock_error_forbidden": "❌ บอทไม่สามารถล็อคห้องได้ กรุณาตรวจสอบสิทธิ์ของบอท (Manage Channels) ในเซิร์ฟเวอร์และหมวดหมู่",
+    "lock_error_general": "❌ เกิดข้อผิดพลาดในการล็อคห้อง: {error}",
+    "trans_success_message": "ปิดการขายเรียบร้อย ลบช่องใน 5 วินาที...",
+    "trans_middleman_call": "มีการเรียกแอดมินกลาง!",
+    "trans_middleman_success": "แจ้งเตือนแอดมินเรียบร้อยแล้ว",
+    "trans_cancel_request": "ส่งคำขอยกเลิกแล้ว รอแอดมินยืนยัน...",
+    # Forum Ticket Texts
+    "forum_btn_message": "🛒 **กดสั่งซื้อสินค้า หรือ รายงานโพสต์ ได้ที่นี่** 👇",
+    "forum_ticket_error_category": "❌ ระบบขัดข้อง (Category not set)",
+    "forum_ticket_error_category_not_found": "❌ หาหมวดหมู่ Ticket ไม่เจอ",
+    "forum_ticket_error_owner_buy": "❌ คุณเป็นเจ้าของโพสต์ ไม่สามารถกดสั่งซื้อได้",
+    "forum_ticket_channel_msg": "ช่องนี้เป็นช่องส่วนตัวสามารถทำธุรกรรมได้เลย **สามารถกลางแอดมินหรือไม่กลางก็ได้** หากชำระแล้วสามารถกดเสร็จสิ้นได้เลย\n{buyer_mention} (ผู้ซื้อ) - {seller_mention} (ผู้ขาย)",
+    "forum_ticket_channel_success": "สร้างห้องสั่งซื้อเรียบร้อยแล้ว: {channel_mention}",
+    "forum_ticket_finish_request": "{user_mention} รอยืนยันการ **เสร็จสิ้น** อีกครั้งโดยแอดมิน {support_mention}",
+    "forum_ticket_finish_success": "ส่งคำขอจบงานแล้ว รอแอดมินยืนยัน...",
+    "forum_ticket_middleman_call": "มีการเรียกแอดมินกลาง! {support_mention}",
+    "forum_ticket_middleman_success": "เรียกแอดมินกลางเรียบร้อย",
+    "forum_ticket_cancel_confirm": "{user_mention} รอยืนยันการ **ยกเลิก** อีกครั้งโดยแอดมิน {support_mention}\n**เหตุผล:** {reason}",
+    "forum_ticket_admin_confirm_error": "❌ ข้อมูลห้องนี้ผิดพลาด หรือถูกลบไปแล้ว",
+    "forum_ticket_admin_thread_warning": "⚠️ ไม่สามารถลบกระทู้ต้นทางได้ (อาจจะถูกลบไปแล้ว)",
+    "forum_ticket_admin_confirm_success": "✅ ยืนยันเรียบร้อย! กำลังลบห้องและกระทู้...",
+    # Report Texts
+    "report_error_not_set": "❌ ระบบยังไม่ได้ตั้งค่าช่อง Report",
+    "report_error_not_found": "❌ หาช่อง Report ไม่เจอ",
+    "report_success": "ส่งรายงานเรียบร้อยแล้ว ขอบคุณที่แจ้งครับ 🙏",
+    "report_embed_title": "🚨 มีการแจ้งรายงานใหม่ (Report)",
+    "report_embed_field_reporter": "👤 ผู้รายงาน",
+    "report_embed_field_owner": "👑 เจ้าของกระทู้",
+    "report_embed_field_link": "🔗 ลิงก์กระทู้",
+    "report_embed_field_channel": "📍 ช่อง",
+    "report_embed_field_detail": "📝 รายละเอียด/เหตุผล"
+}
+
 # --- DATA MANAGEMENT ---
 DATA_FILE = "auction_data.json"
 
@@ -75,7 +148,7 @@ def is_admin(user):
     return False
 
 async def no_permission(interaction):
-    msg = "คุณไม่มีสิทธิ์ในการใช้คำสั่ง❌"
+    msg = TEXT_CONFIG["no_permission"]
     if interaction.response.is_done():
         await interaction.followup.send(msg, ephemeral=True)
     else:
@@ -99,7 +172,8 @@ async def revoke_permissions_after_timeout(user_id, channel_id, guild_id):
         if channel and member:
             try:
                 await channel.set_permissions(member, overwrite=None)
-                await channel.send(f"<@{user_id}> สิทธิ์การส่งรูปถูกยกเลิกเนื่องจากหมดเวลา (3 นาที)", delete_after=10)
+                revoke_msg = TEXT_CONFIG["perm_revoke_message"].format(user_mention=f"<@{user_id}>")
+                await channel.send(revoke_msg, delete_after=10)
             except:
                 pass
         if user_id in pending_auctions:
@@ -127,7 +201,8 @@ async def run_countdown(channel, user_id, price, auction_data):
     # ส่งข้อความนับถอยหลังเริ่มต้น
     msg = None
     try:
-        msg = await channel.send(f"# <@{user_id}> ราคา {price} ครั้งที่ {start_num}")
+        countdown_msg_text = TEXT_CONFIG["countdown_message"].format(user_mention=f"<@{user_id}>", price=price, i=start_num)
+        msg = await channel.send(countdown_msg_text)
         # บันทึก ID ข้อความเพื่อนับถอยหลัง
         auction_data["last_countdown_id"] = msg.id
         save_data(data)
@@ -143,11 +218,13 @@ async def run_countdown(channel, user_id, price, auction_data):
         try:
             if i == 0:
                 # หมดเวลาแล้ว!
-                await msg.edit(content=f"# <@{user_id}> ราคา {price} **ปิดการประมูล!**")
+                end_msg_text = TEXT_CONFIG["countdown_end_message"].format(user_mention=f"<@{user_id}>", price=price)
+                await msg.edit(content=end_msg_text)
                 await end_auction_process(channel, auction_data)
             else:
                 # แก้ไขตัวเลข
-                await msg.edit(content=f"# <@{user_id}> ราคา {price} ครั้งที่ {i}")
+                countdown_msg_text = TEXT_CONFIG["countdown_message"].format(user_mention=f"<@{user_id}>", price=price, i=i)
+                await msg.edit(content=countdown_msg_text)
         except discord.NotFound:
             break # ข้อความถูกลบ
         except asyncio.CancelledError:
@@ -173,7 +250,7 @@ async def submit_to_approval(guild, full_data):
                 )
             )
 
-    main_embed = discord.Embed(title="คำขอเปิดประมูลใหม่", color=discord.Color.orange())
+    main_embed = discord.Embed(title=TEXT_CONFIG["auction_approval_title"], color=discord.Color.orange())
     main_embed.set_author(name=full_data['owner_name'], icon_url=None)
     main_embed.add_field(name="สินค้า", value=full_data['item'], inline=False)
     main_embed.add_field(name="ราคาเริ่มต้น", value=f"{full_data['start_price']} บ.", inline=True)
@@ -220,7 +297,7 @@ async def end_auction_process(channel, auction_data):
     winner_id = auction_data["winner_id"]
     
     if not winner_id:
-        await channel.send("# ปิดประมูล (ไม่มีผู้ชนะ)")
+        await channel.send(TEXT_CONFIG["auction_end_no_winner"])
         feedback_channel_id = data["setup"].get("feedback_channel")
         if feedback_channel_id:
             feed_channel = channel.guild.get_channel(feedback_channel_id)
@@ -238,16 +315,25 @@ async def end_auction_process(channel, auction_data):
             save_data(data)
         return
 
-    await channel.send(f"# <@{winner_id}> ชนะการประมูลครั้งที่ : {auction_data['count']}\n### จบที่ราคา : {auction_data['current_price']} บ.")
+    winner_msg = TEXT_CONFIG["auction_end_winner"].format(
+        winner_mention=f"<@{winner_id}>",
+        count=auction_data['count'],
+        price=auction_data['current_price']
+    )
+    await channel.send(winner_msg)
 
     lock_wait = data.get("lock_time", 120)
     if lock_wait > 0:
         lock_end_ts = int(time.time() + lock_wait)
-        await channel.send(f"⏳ รอเวลา {lock_wait} วินาที ก่อนทำการล็อคห้อง <t:{lock_end_ts}:R>")
+        lock_wait_msg = TEXT_CONFIG["lock_wait_message"].format(
+            lock_wait_sec=lock_wait,
+            lock_end_relative=f"<t:{lock_end_ts}:R>"
+        )
+        await channel.send(lock_wait_msg)
         await asyncio.sleep(lock_wait)
 
     try:
-        await channel.send("ช่องนี้ได้เป็นช่องส่วนตัวแล้วสามารถทำธุรกรรมได้เลย...")
+        await channel.send(TEXT_CONFIG["lock_success_message"])
         
         overwrites = {}
         
@@ -290,16 +376,12 @@ async def end_auction_process(channel, auction_data):
         # ใช้ Channel.edit เพื่ออัปเดตสิทธิ์ทั้งหมด
         await channel.edit(overwrites=overwrites)
         
-        msg_text = f"""
-ปุ่มสีเขียว ✅ เป็นของผู้เปิดประมูล
-ปุ่มสีเทา 💰 เป็นของผู้ชนะประมูล
-ปุ่มสีแดง ❌ เป็นของผู้เปิดประมูลและแอดมิน
-        """
-        await channel.send(msg_text, view=TransactionView(channel.id))
+        await channel.send(TEXT_CONFIG["lock_info_message"], view=TransactionView(channel.id))
     except discord.Forbidden:
-        await channel.send("❌ บอทไม่สามารถล็อคห้องได้ กรุณาตรวจสอบสิทธิ์ของบอท (Manage Channels) ในเซิร์ฟเวอร์และหมวดหมู่", delete_after=30)
+        await channel.send(TEXT_CONFIG["lock_error_forbidden"], delete_after=30)
     except Exception as e:
-        await channel.send(f"❌ เกิดข้อผิดพลาดในการล็อคห้อง: {e}", delete_after=30)
+        error_msg = TEXT_CONFIG["lock_error_general"].format(error=e)
+        await channel.send(error_msg, delete_after=30)
         print(f"Error locking channel: {e}")
 
 # --- MODALS ---
@@ -325,13 +407,15 @@ class CancelReasonModal(discord.ui.Modal, title="เหตุผลการย�
 
         await interaction.channel.delete()
         if str(interaction.channel_id) in data["active_auctions"]:
-            del data["active_auctions"][str(interaction.channel_id)]
-            if str(interaction.channel_id) in auction_tasks:
-                auction_tasks[str(interaction.channel_id)].cancel() # ยกเลิกนับถอยหลังถ้ามี
-                del auction_tasks[str(interaction.channel_id)]
-            if str(interaction.channel_id) in name_update_tasks:
-                name_update_tasks[str(interaction.channel_id)].cancel() # ยกเลิก Task เปลี่ยนชื่อห้องถ้ามี
-                del name_update_tasks[str(interaction.channel_id)]
+            # ยกเลิก Task และลบข้อมูลการประมูล
+            channel_id_str = str(interaction.channel_id)
+            if channel_id_str in auction_tasks:
+                auction_tasks[channel_id_str].cancel()
+                del auction_tasks[channel_id_str]
+            if channel_id_str in name_update_tasks:
+                name_update_tasks[channel_id_str].cancel()
+                del name_update_tasks[channel_id_str]
+            del data["active_auctions"][channel_id_str]
             save_data(data)
 
 class DenyReasonModal(discord.ui.Modal, title="เหตุผลไม่อนุมัติ"):
@@ -352,7 +436,7 @@ class DenyReasonModal(discord.ui.Modal, title="เหตุผลไม่อน
 
 class AuctionImagesModal(discord.ui.Modal, title="ข้อมูลการประมูล (2/2)"):
     rights = discord.ui.TextInput(label="สิทธิ์", placeholder="เช่น สิทธิ์ขาด, สิทธิ์เชิงพาณิชย์", required=True)
-    extra = discord.ui.TextInput(label="เพิ่มเติม", required=False)
+    extra = discord.ui.TextInput(label="เพิ่มเติม", required=False) # แก้ 'false' เป็น 'False' แล้ว
     end_time_input = discord.ui.TextInput(label="เวลาปิด (ชั่วโมง:นาที)", placeholder="ตัวอย่าง 14:10", required=True, max_length=5)
     def __init__(self, first_step_data):
         super().__init__()
@@ -363,7 +447,7 @@ class AuctionImagesModal(discord.ui.Modal, title="ข้อมูลการป
             duration_seconds = (hours * 3600) + (minutes * 60)
             end_timestamp = int(time.time() + duration_seconds)
         except ValueError:
-            return await interaction.response.send_message("รูปแบบเวลาไม่ถูกต้อง", ephemeral=True)
+            return await interaction.response.send_message(TEXT_CONFIG["modal_error_time_format"], ephemeral=True)
         
         await interaction.response.defer(ephemeral=True)
         
@@ -378,17 +462,24 @@ class AuctionImagesModal(discord.ui.Modal, title="ข้อมูลการป
         })
 
         img_channel_id = data["setup"].get("image_channel")
-        if not img_channel_id: return await interaction.followup.send("❌ ยังไม่ได้ตั้งค่าช่องอัปโหลดรูป", ephemeral=True)
+        if not img_channel_id: 
+            return await interaction.followup.send(TEXT_CONFIG["modal_error_no_img_channel"], ephemeral=True)
+            
         img_channel = interaction.guild.get_channel(img_channel_id)
-        if not img_channel: return await interaction.followup.send("❌ หาช่องอัปโหลดรูปไม่เจอ", ephemeral=True)
+        if not img_channel: 
+            return await interaction.followup.send(TEXT_CONFIG["modal_error_img_channel_not_found"], ephemeral=True)
 
         pending_auctions[interaction.user.id] = full_data
 
         overwrite = discord.PermissionOverwrite(view_channel=True, send_messages=True, attach_files=True, read_message_history=False)
         await img_channel.set_permissions(interaction.user, overwrite=overwrite)
 
-        await interaction.followup.send(f"กรุณาส่งรูปภาพสินค้าที่ช่อง : {img_channel.mention} (คุณมีเวลา 3 นาที)", ephemeral=True)
-        try: await img_channel.send(f"<@{interaction.user.id}> กรุณาส่งรูปสินค้าของคุณที่นี่...")
+        prompt_msg = TEXT_CONFIG["modal_img_prompt_start"].format(img_channel_mention=img_channel.mention)
+        await interaction.followup.send(prompt_msg, ephemeral=True)
+        
+        try: 
+            prompt_in_channel = TEXT_CONFIG["modal_img_prompt_in_channel"].format(user_mention=f"<@{interaction.user.id}>")
+            await img_channel.send(prompt_in_channel)
         except: pass
         
         asyncio.create_task(revoke_permissions_after_timeout(interaction.user.id, img_channel.id, interaction.guild_id))
@@ -404,7 +495,8 @@ class AuctionDetailsModal(discord.ui.Modal, title="ข้อมูลการ�
             b_step = int(self.bid_step.value)
             bin_p = int(self.bin_price.value)
         except ValueError:
-            return await interaction.response.send_message("กรุณาใส่ราคาเป็นตัวเลขเท่านั้น", ephemeral=True)
+            return await interaction.response.send_message(TEXT_CONFIG["modal_error_number_format"], ephemeral=True)
+            
         first_step_data = {"start_price": s_price, "bid_step": b_step, "bin_price": bin_p, "item": self.item.value}
         view = ContinueSetupView(first_step_data)
         await interaction.response.send_message("กรอกข้อมูลส่วนแรกเสร็จสิ้น กดปุ่มด้านล่างเพื่อกรอกส่วนที่เหลือ", ephemeral=True, view=view)
@@ -413,34 +505,40 @@ class ReportModal(discord.ui.Modal, title="แจ้งรายงาน (Repor
     reason = discord.ui.TextInput(label="รายละเอียด/เหตุผล", style=discord.TextStyle.paragraph, required=True)
     async def on_submit(self, interaction: discord.Interaction):
         report_channel_id = data["forum_setup"].get("report_channel_id")
-        if not report_channel_id: return await interaction.response.send_message("❌ ระบบยังไม่ได้ตั้งค่าช่อง Report", ephemeral=True)
+        if not report_channel_id: 
+            return await interaction.response.send_message(TEXT_CONFIG["report_error_not_set"], ephemeral=True)
+            
         report_channel = interaction.guild.get_channel(report_channel_id)
         if report_channel:
-            embed = discord.Embed(title="🚨 มีการแจ้งรายงานใหม่ (Report)", color=discord.Color.red())
-            embed.add_field(name="👤 ผู้รายงาน", value=interaction.user.mention, inline=True)
+            embed = discord.Embed(title=TEXT_CONFIG["report_embed_title"], color=discord.Color.red())
+            embed.add_field(name=TEXT_CONFIG["report_embed_field_reporter"], value=interaction.user.mention, inline=True)
             if isinstance(interaction.channel, discord.Thread):
-                embed.add_field(name="👑 เจ้าของกระทู้", value=f"<@{interaction.channel.owner_id}>", inline=True)
-                embed.add_field(name="🔗 ลิงก์กระทู้", value=f"[กดเพื่อไปที่กระทู้]({interaction.channel.jump_url})", inline=False)
+                embed.add_field(name=TEXT_CONFIG["report_embed_field_owner"], value=f"<@{interaction.channel.owner_id}>", inline=True)
+                embed.add_field(name=TEXT_CONFIG["report_embed_field_link"], value=f"[กดเพื่อไปที่กระทู้]({interaction.channel.jump_url})", inline=False)
             else:
-                embed.add_field(name="📍 ช่อง", value=interaction.channel.mention, inline=True)
-            embed.add_field(name="📝 รายละเอียด/เหตุผล", value=self.reason.value, inline=False)
+                embed.add_field(name=TEXT_CONFIG["report_embed_field_channel"], value=interaction.channel.mention, inline=True)
+            embed.add_field(name=TEXT_CONFIG["report_embed_field_detail"], value=self.reason.value, inline=False)
             embed.timestamp = datetime.now()
             
             support_msg = get_support_mention()
             await report_channel.send(content=support_msg, embed=embed)
             
-            await interaction.response.send_message("ส่งรายงานเรียบร้อยแล้ว ขอบคุณที่แจ้งครับ 🙏", ephemeral=True)
+            await interaction.response.send_message(TEXT_CONFIG["report_success"], ephemeral=True)
         else:
-            await interaction.response.send_message("❌ หาช่อง Report ไม่เจอ", ephemeral=True)
+            await interaction.response.send_message(TEXT_CONFIG["report_error_not_found"], ephemeral=True)
 
 class TicketCancelReasonModal(discord.ui.Modal, title="เหตุผลการยกเลิก"):
     reason = discord.ui.TextInput(label="เหตุผล", style=discord.TextStyle.paragraph, required=True)
     async def on_submit(self, interaction: discord.Interaction):
-        support_msg = get_support_mention()
-        msg = f"{interaction.user.mention} รอยืนยันการ **ยกเลิก** อีกครั้งโดยแอดมิน {support_msg}\n**เหตุผล:** {self.reason.value}"
+        support_mention = get_support_mention()
+        msg = TEXT_CONFIG["forum_ticket_cancel_confirm"].format(
+            user_mention=interaction.user.mention, 
+            support_mention=support_mention, 
+            reason=self.reason.value
+        )
         view = AdminConfirmView(action="cancel", requester=interaction.user, reason=self.reason.value)
         await interaction.channel.send(msg, view=view)
-        await interaction.response.send_message("ส่งคำขอยกเลิกแล้ว รอแอดมินยืนยัน...", ephemeral=True)
+        await interaction.response.send_message(TEXT_CONFIG["trans_cancel_request"], ephemeral=True)
 
 # --- VIEWS ---
 
@@ -466,7 +564,7 @@ class TransactionView(discord.ui.View):
                 embed.add_field(name="จบที่ราคา", value=f"{auction['current_price']} บ.")
                 embed.add_field(name="สถานะ", value="สำเร็จเสร็จสิ้น")
                 await channel.send(embed=embed)
-        await interaction.followup.send("ปิดการขายเรียบร้อย ลบช่องใน 5 วินาที...")
+        await interaction.followup.send(TEXT_CONFIG["trans_success_message"])
         await asyncio.sleep(5)
         await interaction.channel.delete()
         if str(interaction.channel_id) in data["active_auctions"]:
@@ -476,14 +574,18 @@ class TransactionView(discord.ui.View):
     async def middleman_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         auction = data["active_auctions"].get(str(interaction.channel_id))
         if not auction: return
+        # อนุญาตให้ผู้ชนะและแอดมินเรียกกลางได้
         if interaction.user.id != auction.get("winner_id") and not is_admin(interaction.user):
             return await no_permission(interaction)
-        msg = "มีการเรียกแอดมินกลาง!"
+            
+        msg = TEXT_CONFIG["trans_middleman_call"]
         for sup_id in data["support_ids"]:
             msg += f" <@{sup_id}>"
+            
         await interaction.channel.send(msg)
         if not interaction.response.is_done():
-            await interaction.response.send_message("แจ้งเตือนแอดมินเรียบร้อยแล้ว", ephemeral=True)
+            await interaction.response.send_message(TEXT_CONFIG["trans_middleman_success"], ephemeral=True)
+            
     @discord.ui.button(label="ยกเลิกการประมูล ❌", style=discord.ButtonStyle.red, custom_id="trans_cancel")
     async def cancel_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         auction = data["active_auctions"].get(str(interaction.channel_id))
@@ -516,29 +618,31 @@ class ApprovalView(discord.ui.View):
         save_data(data)
         category_id = data["setup"].get("category_id")
         category = interaction.guild.get_channel(category_id)
-        if not category: return await interaction.followup.send("หมวดหมู่ประมูลไม่ถูกต้อง", ephemeral=True)
+        if not category: 
+            return await interaction.followup.send(TEXT_CONFIG["auction_approve_category_error"], ephemeral=True)
+            
         channel_name = f"การประมูลครั้งที่-{count}-ราคา-{self.auction_data['start_price']}"
         try: channel = await interaction.guild.create_text_channel(channel_name, category=category)
-        except Exception as e: return await interaction.followup.send(f"สร้างห้องไม่สำเร็จ: {e}", ephemeral=True)
+        except Exception as e: 
+            error_msg = TEXT_CONFIG["auction_approve_channel_error"].format(error=e)
+            return await interaction.followup.send(error_msg, ephemeral=True)
         
         noti_role_id = data["setup"].get("noti_role")
         ping_msg = f"<@&{noti_role_id}>" if noti_role_id else "@everyone"
         
-        msg_content = f"""# การประมูลครั้งที่ - {count}
-โดย <@{self.auction_data['owner_id']}>
-### ราคาเริ่มต้น : {self.auction_data['start_price']}
-### บิดครั้งละ : {self.auction_data['bid_step']}
-### ราคาปิดประมูล : {self.auction_data['bin_price']}
-สิ่งที่ได้รับ : {self.auction_data['item']}
-สิทธิ์ : {self.auction_data['rights']}
-เพิ่มเติม : {self.auction_data['extra']}
-เวลาปิดประมูล : <t:{self.auction_data['end_timestamp']}:R>
-{ping_msg}"""
+        msg_content = TEXT_CONFIG["auction_open_message"].format(
+            count=count, owner_mention=f"<@{self.auction_data['owner_id']}>",
+            start_price=self.auction_data['start_price'], bid_step=self.auction_data['bid_step'],
+            bin_price=self.auction_data['bin_price'], item=self.auction_data['item'],
+            rights=self.auction_data['rights'], extra=self.auction_data['extra'],
+            end_time_relative=f"<t:{self.auction_data['end_timestamp']}:R>", ping_msg=ping_msg
+        )
         
         valid_images = [img for img in self.auction_data['images'] if img]
         prefixed_images = [f"-# {url}" for url in valid_images]
         img_str = "\n".join(prefixed_images)
-        msg_content += f"\n{img_str}"
+        if img_str:
+            msg_content += f"\n{img_str}"
         
         await channel.send(msg_content, view=AuctionControlView())
         data["active_auctions"][str(channel.id)] = {
@@ -548,8 +652,10 @@ class ApprovalView(discord.ui.View):
             "winner_id": None, "winner_name": None, "last_msg_id": None, "history": [], "status": "active"
         }
         save_data(data)
-        await interaction.followup.send(f"อนุมัติแล้ว สร้างห้องที่ {channel.mention}", ephemeral=True)
+        success_msg = TEXT_CONFIG["auction_approve_success"].format(channel_mention=channel.mention)
+        await interaction.followup.send(success_msg, ephemeral=True)
         self.stop()
+        
     @discord.ui.button(label="ไม่อนุมัติ", style=discord.ButtonStyle.red)
     async def deny(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not is_admin(interaction.user): return await no_permission(interaction)
@@ -623,11 +729,16 @@ class ForumPostControlView(discord.ui.View):
     async def buy_callback(self, interaction: discord.Interaction):
         setup = data.get("forum_setup", {})
         category_id = setup.get("category_id")
-        if not category_id: return await interaction.response.send_message("❌ ระบบขัดข้อง (Category not set)", ephemeral=True)
+        if not category_id: 
+            return await interaction.response.send_message(TEXT_CONFIG["forum_ticket_error_category"], ephemeral=True)
+            
         category = interaction.guild.get_channel(category_id)
-        if not category: return await interaction.response.send_message("❌ หาหมวดหมู่ Ticket ไม่เจอ", ephemeral=True)
+        if not category: 
+            return await interaction.response.send_message(TEXT_CONFIG["forum_ticket_error_category_not_found"], ephemeral=True)
+            
         if interaction.channel.owner_id == interaction.user.id:
-             return await interaction.response.send_message("❌ คุณเป็นเจ้าของโพสต์ ไม่สามารถกดสั่งซื้อได้", ephemeral=True)
+             return await interaction.response.send_message(TEXT_CONFIG["forum_ticket_error_owner_buy"], ephemeral=True)
+             
         await interaction.response.defer(ephemeral=True)
         data["forum_ticket_count"] += 1
         count = data["forum_ticket_count"]
@@ -648,28 +759,37 @@ class ForumPostControlView(discord.ui.View):
             "buyer_id": interaction.user.id, "seller_id": seller_id, "created_at": int(time.time())
         }
         save_data(data)
-        msg = f"ช่องนี้เป็นช่องส่วนตัวสามารถทำธุรกรรมได้เลย **สามารถกลางแอดมินหรือไม่กลางก็ได้** หากชำระแล้วสามารถกดเสร็จสิ้นได้เลย\n{interaction.user.mention} (ผู้ซื้อ) - <@{seller_id}> (ผู้ขาย)"
-        await ticket_channel.send(msg, view=ForumTicketControlView())
-        await interaction.followup.send(f"สร้างห้องสั่งซื้อเรียบร้อยแล้ว: {ticket_channel.mention}", ephemeral=True)
+        
+        channel_msg = TEXT_CONFIG["forum_ticket_channel_msg"].format(
+            buyer_mention=interaction.user.mention, seller_mention=f"<@{seller_id}>"
+        )
+        await ticket_channel.send(channel_msg, view=ForumTicketControlView())
+        
+        success_msg = TEXT_CONFIG["forum_ticket_channel_success"].format(channel_mention=ticket_channel.mention)
+        await interaction.followup.send(success_msg, ephemeral=True)
 
 class ForumTicketControlView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
     @discord.ui.button(label="✅ เสร็จสิ้น", style=discord.ButtonStyle.green, custom_id="ft_finish")
     async def finish_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        support_msg = get_support_mention()
-        msg = f"{interaction.user.mention} รอยืนยันการ **เสร็จสิ้น** อีกครั้งโดยแอดมิน {support_msg}"
+        support_mention = get_support_mention()
+        msg = TEXT_CONFIG["forum_ticket_finish_request"].format(
+            user_mention=interaction.user.mention, support_mention=support_mention
+        )
         view = AdminConfirmView(action="finish", requester=interaction.user)
         await interaction.channel.send(msg, view=view)
-        await interaction.response.send_message("ส่งคำขอจบงานแล้ว รอแอดมินยืนยัน...", ephemeral=True)
+        await interaction.response.send_message(TEXT_CONFIG["forum_ticket_finish_success"], ephemeral=True)
+        
     @discord.ui.button(label="💰 กลางแอดมิน", style=discord.ButtonStyle.secondary, custom_id="ft_middleman")
     async def middleman_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         ticket_data = data["active_forum_tickets"].get(str(interaction.channel_id))
         if ticket_data:
             try: await interaction.channel.edit(name=f"กลาง-ID-{ticket_data['count']}")
             except: pass
-        support_msg = get_support_mention()
-        await interaction.channel.send(f"มีการเรียกแอดมินกลาง! {support_msg}")
-        await interaction.response.send_message("เรียกแอดมินกลางเรียบร้อย", ephemeral=True)
+        support_mention = get_support_mention()
+        await interaction.channel.send(TEXT_CONFIG["forum_ticket_middleman_call"].format(support_mention=support_mention))
+        await interaction.response.send_message(TEXT_CONFIG["forum_ticket_middleman_success"], ephemeral=True)
+        
     @discord.ui.button(label="❌ ยกเลิก", style=discord.ButtonStyle.red, custom_id="ft_cancel")
     async def cancel_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(TicketCancelReasonModal())
@@ -687,7 +807,9 @@ class AdminConfirmView(discord.ui.View):
         await interaction.response.defer()
         channel_id = str(interaction.channel_id)
         ticket_data = data["active_forum_tickets"].get(channel_id)
-        if not ticket_data: return await interaction.followup.send("❌ ข้อมูลห้องนี้ผิดพลาด หรือถูกลบไปแล้ว")
+        
+        if not ticket_data: 
+            return await interaction.followup.send(TEXT_CONFIG["forum_ticket_admin_confirm_error"])
         
         thread_id = ticket_data.get("thread_id")
         try:
@@ -695,7 +817,7 @@ class AdminConfirmView(discord.ui.View):
             if thread: await thread.delete()
         except Exception as e:
             print(f"Could not delete thread: {e}")
-            await interaction.channel.send(f"⚠️ ไม่สามารถลบกระทู้ต้นทางได้ (อาจจะถูกลบไปแล้ว)")
+            await interaction.channel.send(TEXT_CONFIG["forum_ticket_admin_thread_warning"])
 
         feedback_channel_id = data["setup"].get("feedback_channel")
         if feedback_channel_id:
@@ -714,7 +836,7 @@ class AdminConfirmView(discord.ui.View):
                 support_msg = get_support_mention()
                 await feed_channel.send(content=support_msg, embed=embed)
 
-        await interaction.channel.send("✅ ยืนยันเรียบร้อย! กำลังลบห้องและกระทู้...", delete_after=5)
+        await interaction.channel.send(TEXT_CONFIG["forum_ticket_admin_confirm_success"], delete_after=5)
         await asyncio.sleep(3)
         await interaction.channel.delete()
         if channel_id in data["active_forum_tickets"]:
@@ -732,7 +854,7 @@ async def on_thread_create(thread):
         buy_label = setup.get("buy_label", "🛒 กดสั่งซื้อตรงนี้")
         report_label = setup.get("report_label", "🚨 รายงาน")
         view = ForumPostControlView(buy_label, report_label)
-        await thread.send("🛒 **กดสั่งซื้อสินค้า หรือ รายงานโพสต์ ได้ที่นี่** 👇", view=view)
+        await thread.send(TEXT_CONFIG["forum_btn_message"], view=view)
 
 @bot.event
 async def on_message(message):
@@ -750,7 +872,7 @@ async def on_message(message):
                         full_data["images_data"].append({"data": file_bytes, "filename": attachment.filename})
                     except Exception as e: print(f"Error reading attachment: {e}")
                 if message.author.id in pending_auctions: del pending_auctions[message.author.id]
-                await message.channel.send("ได้รับรูปภาพแล้ว กำลังส่งคำขออนุมัติ... ✅", delete_after=5)
+                await message.channel.send(TEXT_CONFIG["image_received"], delete_after=5)
                 await submit_to_approval(message.guild, full_data)
                 await message.channel.set_permissions(message.author, overwrite=None)
                 return
@@ -769,7 +891,7 @@ async def on_message(message):
             
             min_next = current + step if len(auction["history"]) > 0 else current
             if amount < min_next: 
-                 await message.reply("ราคาที่คุณบิดต่ำเกินไป❌", delete_after=10)
+                 await message.reply(TEXT_CONFIG["bid_too_low"], delete_after=10)
                  return
                  
             # 1. บันทึกการบิดปกติ (อัปเดตผู้ชนะและราคา)
@@ -796,9 +918,11 @@ async def on_message(message):
                     await old_msg.delete()
                 except: pass
                 
-            msg_text = f"# <@{message.author.id}> บิด {amount} บ.-"
+            msg_text = TEXT_CONFIG["bid_message"].format(user_mention=f"<@{message.author.id}>", amount=amount)
+            
             if prev_winner_id and prev_winner_id != message.author.id:
-                msg_text += f"\n<@{prev_winner_id}> ถูกแซงแล้ว!"
+                msg_text += TEXT_CONFIG["bid_message_overtake"].format(prev_winner_mention=f"<@{prev_winner_id}>")
+                
             new_msg = await message.reply(msg_text)
             auction["last_msg_id"] = new_msg.id
             save_data(data)
@@ -820,8 +944,8 @@ async def on_message(message):
             
             # ถ้าบิดถึง 'ราคาปิดประมูล' หรือเกินไปแล้ว ให้เริ่มนับถอยหลัง (แทนการจบการประมูลทันที)
             if bin_price > 0 and amount >= bin_price:
-                # แก้ไขข้อความแจ้งเตือน ไม่ให้มีคำว่า BIN
-                await message.channel.send(f"⚠️ ราคาถึงกำหนดปิดประมูล ({bin_price} บ.)! เริ่มนับถอยหลังยืนยันผู้ชนะ...")
+                # แจ้งเตือนว่าถึง BIN แล้วเริ่มนับถอยหลัง
+                await message.channel.send(TEXT_CONFIG["bid_bin_reached"].format(bin_price=bin_price))
                 
                 # เริ่มนับถอยหลัง
                 task = bot.loop.create_task(run_countdown(message.channel, message.author.id, amount, auction))
