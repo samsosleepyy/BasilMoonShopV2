@@ -232,6 +232,8 @@ async def end_auction_process(channel, auction_data):
         await channel.send("ช่องนี้ได้เป็นช่องส่วนตัวแล้วสามารถทำธุรกรรมได้เลย...")
         
         overwrites = {}
+        
+        # 1. กำหนดสิทธิ์ DENY สำหรับทุกคนที่ไม่เกี่ยวข้อง
         deny_all = discord.PermissionOverwrite(
             view_channel=False, read_messages=False, read_message_history=False,
             send_messages=False, send_tts_messages=False, manage_messages=False,
@@ -241,12 +243,15 @@ async def end_auction_process(channel, auction_data):
             create_instant_invite=False, create_public_threads=False, create_private_threads=False,
             send_messages_in_threads=False, manage_threads=False
         )
+        # ตั้งค่า deny_all ให้กับทุก Role ยกเว้น Role ที่มี Admin
         for role in channel.guild.roles:
             if role.permissions.administrator: continue
             overwrites[role] = deny_all
 
-        overwrites[channel.guild.me] = discord.PermissionOverwrite(view_channel=True)
+        # 2. อนุญาตให้บอทเข้าถึง
+        overwrites[channel.guild.me] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
         
+        # 3. กำหนดสิทธิ์อนุญาตเฉพาะผู้เกี่ยวข้อง
         strict_allow = discord.PermissionOverwrite(
             view_channel=True, read_message_history=True, send_messages=True,
             attach_files=True, embed_links=True, add_reactions=True,
@@ -264,6 +269,7 @@ async def end_auction_process(channel, auction_data):
             winner = channel.guild.get_member(winner_id)
             if winner: overwrites[winner] = strict_allow
         
+        # ใช้ Channel.edit เพื่ออัปเดตสิทธิ์ทั้งหมด
         await channel.edit(overwrites=overwrites)
         
         msg_text = f"""
@@ -272,7 +278,10 @@ async def end_auction_process(channel, auction_data):
 ปุ่มสีแดง ❌ เป็นของผู้เปิดประมูลและแอดมิน
         """
         await channel.send(msg_text, view=TransactionView(channel.id))
+    except discord.Forbidden:
+        await channel.send("❌ บอทไม่สามารถล็อคห้องได้ กรุณาตรวจสอบสิทธิ์ของบอท (Manage Channels) ในเซิร์ฟเวอร์และหมวดหมู่", delete_after=30)
     except Exception as e:
+        await channel.send(f"❌ เกิดข้อผิดพลาดในการล็อคห้อง: {e}", delete_after=30)
         print(f"Error locking channel: {e}")
 
 # --- MODALS ---
@@ -822,10 +831,8 @@ async def info_cmd(interaction: discord.Interaction, channel: discord.TextChanne
     await interaction.response.defer(ephemeral=True)
     info_data = {"select_placeholder": select_placeholder, "select_label1": select_label1, "select_label2": select_label2, "info1": info1, "info2": info2}
     view = InfoSelectView(info_data)
-    try:
-        await channel.send(message, view=view)
-        await interaction.followup.send(f"ส่งข้อความพร้อมปุ่มไปยัง {channel.mention} เรียบร้อยแล้ว ✅", ephemeral=True)
-    except Exception as e: await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+    await channel.send(message, view=view)
+    await interaction.followup.send(f"ส่งข้อความพร้อมปุ่มไปยัง {channel.mention} เรียบร้อยแล้ว ✅", ephemeral=True)
 
 @bot.tree.command(name="imagec", description="ตั้งค่าช่องสำหรับอัปโหลดรูปภาพ")
 async def imagec(interaction: discord.Interaction, channel: discord.TextChannel):
@@ -884,6 +891,7 @@ async def lock_cmd(interaction: discord.Interaction, time_sec: int = 120):
     await interaction.response.send_message(f"ตั้งเวลาคูลดาวน์ก่อนล็อคห้องเป็น {time_sec} วินาที ✅")
 
 @bot.tree.command(name="setup", description="ตั้งค่าห้องเปิดประมูล")
+@app_commands.describe(category="หมวดหมู่สำหรับห้องประมูล", channel="ช่องที่จะสร้างปุ่มเปิดประมูล", message="ข้อความหลักในห้องเปิดประมูล", approval_channel="ช่องสำหรับแอดมินอนุมัติ", feedback_channel="ช่องสำหรับส่งรายงานจบการประมูล", btn_label="ข้อความปุ่มเปิดประมูล", img_url="URL รูปภาพ (ถ้ามี)")
 async def setup(interaction: discord.Interaction, category: discord.CategoryChannel, channel: discord.TextChannel, message: str, approval_channel: discord.TextChannel, feedback_channel: discord.TextChannel = None, btn_label: str = "💰 เปิดประมูล", img_url: str = None):
     if not is_admin(interaction.user): return await no_permission(interaction)
     await interaction.response.defer(ephemeral=True)
