@@ -134,7 +134,7 @@ def load_data():
 
 def save_data(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=**False**, indent=4) # **แก้ไข: 'false' เป็น 'False' (ตาม Saved Info)**
+        json.dump(data, f, ensure_ascii=False, indent=4) # **แก้ไข: 'false' เป็น 'False' (ตาม Saved Info)**
 
 data = load_data()
 
