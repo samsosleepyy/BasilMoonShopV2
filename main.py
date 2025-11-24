@@ -134,7 +134,7 @@ def load_data():
 
 def save_data(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4) # **แก้ไข: 'false' เป็น 'False' (ตาม Saved Info)**
+        json.dump(data, f, ensure_ascii=**False**, indent=4) # **แก้ไข: 'false' เป็น 'False' (ตาม Saved Info)**
 
 data = load_data()
 
@@ -1013,7 +1013,13 @@ async def ratelimit_bid_delay(interaction: discord.Interaction, seconds: int):
 
 
 @bot.tree.command(name="ticketsforum", description="ตั้งค่าระบบ Tickets สำหรับ Forum")
-@app_commands.describe(category="หมวดหมู่ที่จะสร้างห้อง Ticket", forum_channel="ช่อง Forum ที่จะให้บอททำงาน", report_channel="ช่องสำหรับส่ง Report", buy_label="ข้อความปุ่มซื้อ", report_label="ข้อความปุ่มรายงาน")
+@app_commands.describe(
+    category="หมวดหมู่ที่จะสร้างห้อง Ticket", 
+    forum_channel="ช่อง Forum ที่จะให้บอททำงาน", 
+    report_channel="ช่องสำหรับส่ง Report", 
+    buy_label="ข้อความปุ่มซื้อ", 
+    report_label="ข้อความปุ่มรายงาน"
+)
 async def ticketsforum(interaction: discord.Interaction, category: discord.CategoryChannel, forum_channel: discord.ForumChannel, report_channel: discord.TextChannel, buy_label: str = "🛒 กดสั่งซื้อตรงนี้", report_label: str = "🚨 รายงาน"):
     if not is_admin(interaction.user): return await no_permission(interaction)
     data["forum_setup"] = {"category_id": category.id, "forum_channel_id": forum_channel.id, "report_channel_id": report_channel.id, "buy_label": buy_label, "report_label": report_label}
@@ -1021,6 +1027,7 @@ async def ticketsforum(interaction: discord.Interaction, category: discord.Categ
     await interaction.response.send_message(f"✅ ตั้งค่า Tickets Forum เรียบร้อย!\n- Forum: {forum_channel.mention}\n- Category สร้างห้อง: {category.mention}\n- Report: {report_channel.mention}", ephemeral=True)
 
 @bot.tree.command(name="cdend", description="ตั้งค่าเวลาเริ่มนับถอยหลัง (วินาที)")
+@app_commands.describe(seconds="จำนวนวินาทีที่ให้นับถอยหลัง")
 async def cdend(interaction: discord.Interaction, seconds: int):
     if not is_admin(interaction.user): return await no_permission(interaction)
     data["countdown_start"] = seconds
@@ -1028,7 +1035,15 @@ async def cdend(interaction: discord.Interaction, seconds: int):
     await interaction.response.send_message(f"ตั้งค่าเวลานับถอยหลังเริ่มต้นเป็น {seconds} วินาที ✅", ephemeral=True)
 
 @bot.tree.command(name="info", description="สร้างข้อความพร้อม Select Menu สำหรับแสดงข้อมูลเฉพาะผู้ใช้")
-@app_commands.describe(channel="ช่องที่จะส่งข้อความไป", message="ข้อความหลัก", select_placeholder="ข้อความในช่องเลือก", select_label1="ตัวเลือก 1", select_label2="ตัวเลือก 2", info1="รายละเอียด 1", info2="รายละเอียด 2")
+@app_commands.describe(
+    channel="ช่องที่จะส่งข้อความไป", 
+    message="ข้อความหลัก", 
+    select_placeholder="ข้อความในช่องเลือก", 
+    select_label1="ตัวเลือก 1", 
+    select_label2="ตัวเลือก 2", 
+    info1="รายละเอียด 1", 
+    info2="รายละเอียด 2"
+)
 async def info_cmd(interaction: discord.Interaction, channel: discord.TextChannel, message: str, select_placeholder: str, select_label1: str, select_label2: str, info1: str, info2: str):
     if not is_admin(interaction.user): return await no_permission(interaction)
     await interaction.response.defer(ephemeral=True)
@@ -1038,6 +1053,7 @@ async def info_cmd(interaction: discord.Interaction, channel: discord.TextChanne
     await interaction.followup.send(f"ส่งข้อความพร้อมปุ่มไปยัง {channel.mention} เรียบร้อยแล้ว ✅", ephemeral=True)
 
 @bot.tree.command(name="imagec", description="ตั้งค่าช่องสำหรับอัปโหลดรูปภาพ")
+@app_commands.describe(channel="ช่องสำหรับอัปโหลดรูปภาพ")
 async def imagec(interaction: discord.Interaction, channel: discord.TextChannel):
     if not is_admin(interaction.user): return await no_permission(interaction)
     data["setup"]["image_channel"] = channel.id
@@ -1058,6 +1074,7 @@ async def resetdata(interaction: discord.Interaction):
     await interaction.response.send_message("รีเซ็ตจำนวนครั้งการประมูลและ Forum Tickets กลับเป็น 0 เรียบร้อยแล้ว ✅", ephemeral=True)
 
 @bot.tree.command(name="noti", description="ตั้งค่าบทบาทที่จะแจ้งเตือนเมื่อเปิดประมูล")
+@app_commands.describe(role="บทบาทที่จะแจ้งเตือน")
 async def noti(interaction: discord.Interaction, role: discord.Role):
     if not is_admin(interaction.user): return await no_permission(interaction)
     data["setup"]["noti_role"] = role.id
@@ -1065,6 +1082,7 @@ async def noti(interaction: discord.Interaction, role: discord.Role):
     await interaction.response.send_message(f"ตั้งค่าแจ้งเตือนเป็น {role.mention} เรียบร้อยแล้ว ✅", ephemeral=True)
 
 @bot.tree.command(name="addadmin", description="เพิ่มสมาชิกที่จะสามารถใช้คำสั่งแอดมินได้")
+@app_commands.describe(user="สมาชิกที่ต้องการเพิ่มสิทธิ์แอดมิน")
 async def addadmin(interaction: discord.Interaction, user: discord.User):
     if not is_admin(interaction.user): return await no_permission(interaction)
     if user.id not in data["admins"]:
@@ -1075,6 +1093,7 @@ async def addadmin(interaction: discord.Interaction, user: discord.User):
         if not interaction.response.is_done(): await interaction.response.send_message(f"{user.mention} เป็นแอดมินอยู่แล้ว", ephemeral=True)
 
 @bot.tree.command(name="supportadmin", description="เพิ่ม support admin (User หรือ Role)")
+@app_commands.describe(target="สมาชิกที่ต้องการเพิ่มเป็น Support Admin", role="บทบาทที่ต้องการเพิ่มเป็น Support Admin")
 async def supportadmin(interaction: discord.Interaction, target: discord.Member = None, role: discord.Role = None):
     if not is_admin(interaction.user): return await no_permission(interaction)
     target_id = target.id if target else role.id if role else None
@@ -1087,6 +1106,7 @@ async def supportadmin(interaction: discord.Interaction, target: discord.Member 
     else: await interaction.response.send_message("มีอยู่ในรายการอยู่แล้ว", ephemeral=True)
 
 @bot.tree.command(name="lock", description="ตั้งเวลาคูลดาวน์ก่อนล็อคห้อง (วินาที)")
+@app_commands.describe(time_sec="เวลาเป็นวินาที (ค่าเริ่มต้น 120)")
 async def lock_cmd(interaction: discord.Interaction, time_sec: int = 120):
     if not is_admin(interaction.user): return await no_permission(interaction)
     data["lock_time"] = time_sec
@@ -1094,8 +1114,25 @@ async def lock_cmd(interaction: discord.Interaction, time_sec: int = 120):
     await interaction.response.send_message(f"ตั้งเวลาคูลดาวน์ก่อนล็อคห้องเป็น {time_sec} วินาที ✅")
 
 @bot.tree.command(name="setup", description="ตั้งค่าห้องเปิดประมูล")
-@app_commands.describe(category="หมวดหมู่สำหรับห้องประมูล", channel="ช่องที่จะสร้างปุ่มเปิดประมูล", message="ข้อความหลักในห้องเปิดประมูล", approval_channel="ช่องสำหรับแอดมินอนุมัติ", feedback_channel="ช่องสำหรับส่งรายงานจบการประมูล", btn_label: str = "💰 เปิดประมูล", img_url="URL รูปภาพ (ถ้ามี)")
-async def setup(interaction: discord.Interaction, category: discord.CategoryChannel, channel: discord.TextChannel, message: str, approval_channel: discord.TextChannel, feedback_channel: discord.TextChannel = None, btn_label: str = "💰 เปิดประมูล", img_url: str = None):
+@app_commands.describe(
+    category="หมวดหมู่สำหรับห้องประมูล", 
+    channel="ช่องที่จะสร้างปุ่มเปิดประมูล", 
+    message="ข้อความหลักในห้องเปิดประมูล", 
+    approval_channel="ช่องสำหรับแอดมินอนุมัติ", 
+    feedback_channel="ช่องสำหรับส่งรายงานจบการประมูล", 
+    btn_label="ข้อความปุ่มเปิดประมูล", 
+    img_url="URL รูปภาพ (ถ้ามี)"
+)
+async def setup(
+    interaction: discord.Interaction, 
+    category: discord.CategoryChannel, 
+    channel: discord.TextChannel, 
+    message: str, 
+    approval_channel: discord.TextChannel, 
+    feedback_channel: discord.TextChannel = None, 
+    btn_label: str = "💰 เปิดประมูล", 
+    img_url: str = None
+):
     if not is_admin(interaction.user): return await no_permission(interaction)
     await interaction.response.defer(ephemeral=True)
     data["setup"] = {
