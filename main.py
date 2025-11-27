@@ -8,9 +8,6 @@ import datetime
 import re
 
 # --- CONFIGURATION ---
-import os  # อย่าลืมบรรทัดนี้ (ปกติมีอยู่แล้ว)
-
-# --- CONFIGURATION ---
 # ดึง Token จาก Environment Variable ที่เราตั้งใน Render
 TOKEN = os.getenv('TOKEN') 
 
