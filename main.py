@@ -44,8 +44,8 @@ class Client(discord.Client):
     async def setup_hook(self):
         self.tree.copy_global_to(guild=GUILD_ID)
         await self.tree.sync(guild=GUILD_ID)
-        self.check_auctions.start()
-        self.update_channel_names.start()
+        check_auctions.start()       # <--- ลบ self. ออก
+        update_channel_names.start() # <--- ลบ self. ออก
 
 client = Client()
 
