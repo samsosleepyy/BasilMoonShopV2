@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 import re
 
 # ================= CONFIGURATION =================
-TOKEN = 'YOUR_BOT_TOKEN_HERE'  # ใส่ Token บอทของคุณที่นี่
+TOKEN = os.environ.get('TOKEN')
 DATA_FILE = 'data.json'
 
 # โครงสร้างข้อมูลเริ่มต้น
