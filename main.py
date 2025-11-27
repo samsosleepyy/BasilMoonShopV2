@@ -7,6 +7,24 @@ import asyncio
 from datetime import datetime, timedelta
 import re
 
+# --- ส่วนที่ต้องเพิ่ม 1: Import Flask และ Threading ---
+from flask import Flask
+from threading import Thread
+
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Bot is alive!"
+
+def run_http():
+    # ใช้ port 8080 หรือค่าจาก Environment Variable
+    app.run(host='0.0.0.0', port=8080)
+
+def keep_alive():
+    t = Thread(target=run_http)
+    t.start()
+    
 # ================= CONFIGURATION =================
 TOKEN = os.environ.get('TOKEN')
 DATA_FILE = 'data.json'
@@ -847,4 +865,14 @@ async def channel_name_loop():
 
 # ================= RUN =================
 if __name__ == "__main__":
-    bot.run(TOKEN)
+    # --- ส่วนที่ต้องเพิ่ม 2: เรียกใช้ Web Server ก่อนรันบอท ---
+    keep_alive() 
+    # -----------------------------------------------------
+    
+    # ใช้ Token จาก Environment Variable (ตามที่แนะนำไปก่อนหน้านี้)
+    token = os.environ.get('TOKEN') 
+    if not token:
+        # กรณีรันในเครื่องตัวเองแล้วอยากใส่ Token ตรงๆ (ไม่แนะนำสำหรับ Render)
+        token = 'YOUR_BOT_TOKEN_HERE' 
+        
+    bot.run(token)
