@@ -9,7 +9,7 @@ import re
 
 # --- CONFIGURATION ---
 TOKEN = 'YOUR_BOT_TOKEN_HERE'  # ใส่ Token หรือใช้ os.getenv('TOKEN') สำหรับ Render
-GUILD_ID = discord.Object(id=YOUR_GUILD_ID_HERE) # ใส่ ID ของ Server คุณ (ตัวเลข)
+GUILD_ID = discord.Object(id=1420339720277463112) # ใส่ ID ของ Server คุณ (ตัวเลข)
 
 # --- DATA MANAGEMENT ---
 DATA_FILE = "data.json"
