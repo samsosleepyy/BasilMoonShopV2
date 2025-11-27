@@ -8,7 +8,12 @@ import datetime
 import re
 
 # --- CONFIGURATION ---
-TOKEN = 'YOUR_BOT_TOKEN_HERE'  # ใส่ Token หรือใช้ os.getenv('TOKEN') สำหรับ Render
+import os  # อย่าลืมบรรทัดนี้ (ปกติมีอยู่แล้ว)
+
+# --- CONFIGURATION ---
+# ดึง Token จาก Environment Variable ที่เราตั้งใน Render
+TOKEN = os.getenv('TOKEN') 
+
 GUILD_ID = discord.Object(id=1420339720277463112) # ใส่ ID ของ Server คุณ (ตัวเลข)
 
 # --- DATA MANAGEMENT ---
