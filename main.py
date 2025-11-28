@@ -9,10 +9,9 @@ from datetime import datetime, timedelta
 from flask import Flask
 from threading import Thread
 import io 
-import re # สำหรับใช้ตรวจสอบชื่อผู้ใช้ในช่องส่งรูป
+import re 
 
 # --- KEEP ALIVE SERVER ---
-# ... (โค้ด Keep Alive เดิม)
 app = Flask('')
 
 @app.route('/')
@@ -93,7 +92,6 @@ TEXT_CONFIG = {
 }
 
 # --- DATA MANAGEMENT ---
-# ... (โค้ด Load/Save เดิม)
 def load_data():
     if not os.path.exists(DATA_FILE):
         return {
@@ -123,7 +121,7 @@ def load_data():
 
 def save_data(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4) # **แก้ไขตามที่คุณแจ้ง**
+        json.dump(data, f, ensure_ascii=False, indent=4) 
 
 data = load_data()
 
@@ -134,7 +132,6 @@ intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # --- UTILS ---
-# ... (is_admin, is_support_admin, no_permission, get_support_mention เหมือนเดิม)
 def is_admin(user):
     # ผู้ที่มีสิทธิ์ Administrator ใน Guild สามารถใช้คำสั่ง Admin ได้
     if user.id == bot.owner_id:
@@ -342,7 +339,6 @@ async def lock_channel_for_transaction(channel, auction_data, winner_id):
         print(f"Error locking channel: {e}")
 
 async def submit_to_approval(guild, full_data):
-    # ... (โค้ดส่งไปช่องอนุมัติ)
     approval_channel_id = data["setup"].get("approval_channel")
     if not approval_channel_id: return None 
     approval_channel = guild.get_channel(approval_channel_id)
@@ -753,7 +749,6 @@ class ForumPostControlView(discord.ui.View):
         return True
 
     async def handle_buy_ticket(self, interaction: discord.Interaction):
-        # ... (โค้ดสร้าง Ticket Channel คล้ายกับโค้ดเดิม แต่ปรับชื่อ)
         setup = data.get("forum_setup", {})
         category_id = setup.get("category_id")
         if not category_id: 
@@ -993,14 +988,19 @@ async def on_message(message):
 
 # --- COMMANDS ---
 
-@bot.tree.command(name="sync", description="ซิงค์คำสั่ง")
+@bot.tree.command(name="sync", description="ซิงค์คำสั่ง (Global) เพื่อลบคำสั่งเก่า")
 async def sync(interaction: discord.Interaction):
+    # แก้ไขส่วนนี้เพื่อทำการ Global Sync
     if not is_admin(interaction.user): return await no_permission(interaction)
+    await interaction.response.defer(ephemeral=True)
+
     try:
-        fmt = await bot.tree.sync()
-        await interaction.response.send_message(f"✅ Synced {len(fmt)} commands.", ephemeral=True)
+        # การใช้ guild=None เพื่อซิงค์แบบ Global (บังคับล้างแคชคำสั่งเก่า)
+        fmt = await bot.tree.sync(guild=None) 
+        
+        await interaction.followup.send(f"✅ Synced {len(fmt)} global commands. คำสั่งเก่าควรจะหายไปเร็วๆ นี้", ephemeral=True)
     except Exception as e:
-        await interaction.response.send_message(f"❌ Error: {e}", ephemeral=True)
+        await interaction.followup.send(f"❌ Error during Global Sync: {e}", ephemeral=True)
 
 @bot.tree.command(name="addadmin", description="เพิ่มสมาชิกหรือบทบาทให้สามารถใช้คำสั่งบอทได้")
 @app_commands.describe(target="สมาชิกหรือบทบาท")
