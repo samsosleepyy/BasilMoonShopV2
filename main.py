@@ -300,7 +300,7 @@ class AuctionModalStep2(discord.ui.Modal, title="ข้อมูลการป�
 
             await channel.send("ได้รับรูปสินค้าเรียบร้อย📥 รอแอดมินยืนยัน⏳")
 
-            # Send to Approval Channel (อัปเดตใหม่: แสดงข้อมูลครบ)
+            # Send to Approval Channel
             approval_channel = bot.get_channel(auction_data["approval_id"])
             if approval_channel:
                 embed = discord.Embed(title="คำขอเปิดประมูลใหม่", color=discord.Color.gold())
@@ -371,6 +371,7 @@ class ApprovalView(discord.ui.View):
         self.auction_data['winner_id'] = None
         self.auction_data['message_id'] = msg.id
         self.auction_data['active'] = True
+        self.auction_data['last_bid_msg_id'] = None # เก็บ ID ข้อความล่าสุด
         
         active_auctions[auction_channel.id] = self.auction_data
         
@@ -513,9 +514,8 @@ class ConfirmFinalView(discord.ui.View):
 
     @discord.ui.button(label="ยืนยันอีกครั้ง", style=discord.ButtonStyle.green)
     async def double_confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer() # รอการประมวลผล (ส่ง DM)
+        await interaction.response.defer() 
 
-        # 1. ส่ง DM หาผู้ชนะ
         winner_id = self.auction_data['winner_id']
         download_link = self.auction_data['download_link']
         dm_msg = "✅ ส่งลิ้งค์สินค้าทาง DM แล้ว"
@@ -531,7 +531,6 @@ class ConfirmFinalView(discord.ui.View):
 
         await interaction.followup.send(f"{dm_msg}\nยืนยันเรียบร้อย ลบช่องใน 1 นาที...", ephemeral=True)
         
-        # 2. Log Success
         if self.auction_data['log_id']:
             log = bot.get_channel(self.auction_data['log_id'])
             embed = discord.Embed(
@@ -600,8 +599,18 @@ async def on_message(message):
                  response_text += "\n-# ⚠️ตอนนี้ราคาถึงราคาปิดประมูลแล้วจะปิดประมูลอัตโนมัติทันทีหากไม่มีการประมูลเพิ่มภายใน 10 นาที"
                  auction_data['end_time'] = datetime.datetime.now() + datetime.timedelta(minutes=10)
             
-            sent_msg = await message.reply(response_text)
+            # --- ลบข้อความแจ้งเตือนราคาเก่าออก (Logic ใหม่) ---
+            if 'last_bid_msg_id' in auction_data and auction_data['last_bid_msg_id']:
+                try:
+                    old_msg = await message.channel.fetch_message(auction_data['last_bid_msg_id'])
+                    await old_msg.delete()
+                except:
+                    pass # ข้อความอาจจะถูกลบไปแล้วด้วยวิธีอื่น
             
+            sent_msg = await message.reply(response_text)
+            auction_data['last_bid_msg_id'] = sent_msg.id # บันทึก ID ข้อความใหม่
+            # -----------------------------------------------
+
             last_rename = auction_data.get('last_rename', 0)
             import time
             if time.time() - last_rename > 30:
