@@ -6,6 +6,8 @@ import os
 import asyncio
 import datetime
 import re
+import aiohttp # เพิ่มมาใหม่
+import io      # เพิ่มมาใหม่
 from keep_alive import keep_alive 
 
 # =========================================
@@ -32,7 +34,6 @@ def save_data(data):
 
 data = load_data()
 
-# ตั้งค่า Intent
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
@@ -69,21 +70,20 @@ def is_support_or_admin(interaction: discord.Interaction):
         return True
     return False
 
-# ฟังก์ชันสร้าง Embed List เพื่อแสดงผลแบบ Grid
-def create_gallery_embeds(base_embed, image_urls):
-    embeds = []
-    # Embed ตัวแรก ใส่ข้อมูลครบถ้วน + รูปแรก
-    base_embed.set_image(url=image_urls[0])
-    embeds.append(base_embed)
-    
-    # รูปที่เหลือ สร้าง Embed เปล่าๆ ใส่แค่รูป (Discord จะรวมกลุ่มให้เอง)
-    # หมายเหตุ: Discord จำกัดสูงสุด 10 Embeds ต่อข้อความ และ 4 รูปจะสวยที่สุด
-    for url in image_urls[1:4]: # จำกัดแสดงผลไม่เกิน 4 รูปเพื่อความสวยงาม (หรือแก้เป็น [1:] เพื่อเอาทั้งหมด)
-        img_embed = discord.Embed(url=base_embed.url) # เชื่อม URL เพื่อความชัวร์ (ไม่ใส่ก็ได้)
-        img_embed.set_image(url=url)
-        embeds.append(img_embed)
-        
-    return embeds
+# ฟังก์ชันช่วยดาวน์โหลดรูปจาก URL ให้เป็นไฟล์พร้อมส่ง (เพื่อให้เกิด Grid)
+async def get_files_from_urls(urls):
+    files = []
+    async with aiohttp.ClientSession() as session:
+        for i, url in enumerate(urls):
+            try:
+                async with session.get(url) as resp:
+                    if resp.status == 200:
+                        data = await resp.read()
+                        # สร้างไฟล์จำลองใน Memory ตั้งชื่อไฟล์ให้ไม่ซ้ำ
+                        files.append(discord.File(io.BytesIO(data), filename=f"image_{i}.png"))
+            except:
+                pass
+    return files
 
 # =========================================
 # COMMANDS
@@ -277,7 +277,6 @@ class AuctionModalStep2(discord.ui.Modal, title="ข้อมูลการป�
         channel = await guild.create_text_channel(channel_name, overwrites=overwrites)
         await interaction.response.send_message(f"สร้างช่องส่งรูปแล้วที่ {channel.mention}", ephemeral=True)
 
-        # เริ่ม Task รอรับรูป
         bot.loop.create_task(self.wait_for_images(channel, interaction.user, self.auction_data))
 
     async def wait_for_images(self, channel, user, auction_data):
@@ -285,26 +284,24 @@ class AuctionModalStep2(discord.ui.Modal, title="ข้อมูลการป�
             return m.author.id == user.id and m.channel.id == channel.id and m.attachments
 
         try:
-            # 1. Product Images (Allow Multiple)
             await channel.send(
                 f"{user.mention} ส่งรูปสินค้าของคุณที่ช่องนี้📦\n"
-                "-# **สามารถส่งได้หลายรูปใน 1 ข้อความ** เพื่อให้แสดงเป็นอัลบั้ม", 
+                "-# **สามารถส่งได้หลายรูปใน 1 ข้อความ** เพื่อให้แสดงเป็นอัลบั้มรวม", 
                 delete_after=300
             )
             
             msg1 = await bot.wait_for('message', check=check, timeout=300)
             
-            # เก็บ URL ของทุกรูปที่ส่งมา
+            # เก็บ URL ไว้ใช้งาน (และเพื่อโหลดไฟล์)
             auction_data["img_product_urls"] = [att.url for att in msg1.attachments]
 
-            # 2. QR Code
             await channel.send("โปรดส่งรูป QR code หรือช่องทางการชำระเงิน🧾\n-# ข้อมูลตรงนี้จะไม่มีการเผยแพร่")
             msg2 = await bot.wait_for('message', check=check, timeout=300)
             auction_data["img_qr_url"] = msg2.attachments[0].url
 
             await channel.send("ได้รับรูปสินค้าเรียบร้อย📥 รอแอดมินยืนยัน⏳")
 
-            # ส่งไปห้องอนุมัติ (แสดงผลแบบ Grid)
+            # ส่งไปห้องอนุมัติ (ใช้ Embed สำหรับ Text + Files สำหรับ Grid)
             approval_channel = bot.get_channel(auction_data["approval_id"])
             if approval_channel:
                 base_embed = discord.Embed(title="คำขอเปิดประมูลใหม่", color=discord.Color.gold())
@@ -317,15 +314,14 @@ class AuctionModalStep2(discord.ui.Modal, title="ข้อมูลการป�
                 base_embed.add_field(name="เวลาประมูล", value=f"{auction_data['duration_minutes']} นาที", inline=True)
                 base_embed.add_field(name="ลิ้งค์สินค้า", value=f"{auction_data['download_link']}", inline=False)
                 base_embed.add_field(name="เพิ่มเติม", value=f"{auction_data['extra_info']}", inline=False)
-                
-                # แสดง QR Code ใน Thumbnail (มุมขวาบน)
                 base_embed.set_thumbnail(url=auction_data['img_qr_url'])
                 
-                # สร้าง Grid
-                embeds_to_send = create_gallery_embeds(base_embed, auction_data["img_product_urls"])
+                # โหลดรูปมาแปลงเป็นไฟล์แนบ (Files) เพื่อให้เกิด Grid
+                files_to_send = await get_files_from_urls(auction_data["img_product_urls"])
                 
                 view = ApprovalView(auction_data, channel)
-                await approval_channel.send(embeds=embeds_to_send, view=view)
+                # ส่ง Embed + Files พร้อมกัน
+                await approval_channel.send(embed=base_embed, files=files_to_send, view=view)
 
         except asyncio.TimeoutError:
             await channel.delete()
@@ -338,7 +334,7 @@ class ApprovalView(discord.ui.View):
 
     @discord.ui.button(label="อนุมัติ", style=discord.ButtonStyle.green)
     async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
+        await interaction.response.defer() # จำเป็นต้อง Defer เพราะการอัปโหลดไฟล์อาจใช้เวลา
         if self.temp_channel:
             await self.temp_channel.delete()
         
@@ -358,7 +354,7 @@ class ApprovalView(discord.ui.View):
         end_time = datetime.datetime.now() + datetime.timedelta(minutes=self.auction_data["duration_minutes"])
         timestamp = int(end_time.timestamp())
 
-        # สร้าง Embed สำหรับหน้าประมูลจริง
+        # Embed Text ข้อมูล
         main_embed = discord.Embed(description=f"# ˚₊‧꒰ა ☆ ໒꒱ ‧₊˚\n*เปิดประมูล!*", color=discord.Color.purple())
         main_embed.add_field(name="ᯓ★ โดย", value=f"<@{self.auction_data['seller_id']}>", inline=False)
         main_embed.add_field(name="ᯓ★ ราคาเริ่มต้น", value=f"{self.auction_data['start_price']}", inline=True)
@@ -369,13 +365,12 @@ class ApprovalView(discord.ui.View):
         main_embed.add_field(name="ᯓ★ เพิ่มเติม", value=f"{self.auction_data['extra_info']}", inline=False)
         main_embed.add_field(name="-ˋˏ✄┈┈┈┈", value=f"**เวลาปิดประมูล : <t:{timestamp}:R>**", inline=False)
         
-        # สร้าง Grid (Album)
-        embeds_to_send = create_gallery_embeds(main_embed, self.auction_data["img_product_urls"])
+        # สร้าง Files ใหม่สำหรับห้องประมูล (Grid)
+        files_to_send = await get_files_from_urls(self.auction_data["img_product_urls"])
         
         view = AuctionControlView(self.auction_data['seller_id'])
-        msg = await auction_channel.send(embeds=embeds_to_send, view=view)
+        msg = await auction_channel.send(embed=main_embed, files=files_to_send, view=view)
 
-        # Save Active Data
         self.auction_data['channel_id'] = auction_channel.id
         self.auction_data['current_price'] = self.auction_data['start_price']
         self.auction_data['end_time'] = end_time
@@ -541,9 +536,9 @@ class ConfirmFinalView(discord.ui.View):
                 description=f"── .✦ 𝐒𝐮𝐜𝐜𝐞𝐬𝐬 ✦. ──\n╭﹕การประมูลครั้งที่ - {data['auction_count']}\n | ﹕โดย <@{self.auction_data['seller_id']}>\n | ﹕ผู้ชนะประมูล <@{self.auction_data['winner_id']}>\n╰ ﹕จบที่ราคา : {self.auction_data['current_price']}",
                 color=discord.Color.green()
             )
-            # Log ก็แสดง Grid ด้วย
-            embeds_to_send = create_gallery_embeds(embed, self.auction_data["img_product_urls"])
-            await log.send(embeds=embeds_to_send)
+            # Log ก็ส่ง Files ด้วย
+            files_to_send = await get_files_from_urls(self.auction_data["img_product_urls"])
+            await log.send(embed=embed, files=files_to_send)
         
         await asyncio.sleep(60)
         if self.channel: await self.channel.delete()
