@@ -5,8 +5,6 @@ import asyncio
 from typing import Literal, Optional, Union
 import time
 import os
-from dotenv import load_dotenv # ถ้าคุณใช้ .env ใน Local
-
 # ... โค้ดอื่นๆ ...
 
 # --- ⚙️ รันบอท ⚙️ ---
