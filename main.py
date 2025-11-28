@@ -4,7 +4,23 @@ from discord import app_commands, ui
 import asyncio
 from typing import Literal, Optional, Union
 import time
+import os
+from dotenv import load_dotenv # ถ้าคุณใช้ .env ใน Local
 
+# ... โค้ดอื่นๆ ...
+
+# --- ⚙️ รันบอท ⚙️ ---
+# ดึงค่า Token จาก Environment Variables
+BOT_TOKEN = os.environ.get("TOKEN") 
+
+if BOT_TOKEN:
+    try:
+        bot.run(TOKEN)
+    except discord.HTTPException as e:
+        # มักเกิดจาก Invalid Token หรือ Intents
+        print(f"❌ Error during bot run: {e}")
+else:
+    print("❌ BOT_TOKEN environment variable not set. Application exiting.")
 # --- การตั้งค่าเบื้องต้น ---
 # กำหนด Intents ที่จำเป็น (ต้องเปิดใน Discord Developer Portal ด้วย)
 intents = discord.Intents.default()
