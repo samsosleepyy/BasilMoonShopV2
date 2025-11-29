@@ -14,7 +14,7 @@ KBANK_CONSUMER_KEY = "ldqBpWje9iDJo0ovJtssvyLWrsJw4p6W"
 KBANK_CONSUMER_SECRET = "jNHoKcM0Xt9OPjQx"
 
 # ⚠️ อย่าลืมใส่ Merchant ID (เลข 15 หลัก) ที่ได้จากเว็บ KBank Sandbox
-KBANK_MERCHANT_ID = "ใส่_Merchant_ID_ที่นี่" 
+KBANK_MERCHANT_ID = "KB102057149704" 
 
 KBANK_HOST = "https://openapi-sandbox.kasikornbank.com"
 
