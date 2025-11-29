@@ -14,7 +14,7 @@ class GambleSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="gamble")
+    @app_commands.command(name="gamble", description=MESSAGES["desc_gamble"])
     async def gamble(self, interaction: discord.Interaction):
         if not is_admin_or_has_permission(interaction): return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
         setup_cache[interaction.user.id] = {"step": 1, "chances": [0]*5, "prizes": [None]*5}
