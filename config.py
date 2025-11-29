@@ -1,8 +1,5 @@
 import json
 import os
-import discord
-import aiohttp
-import io
 
 DATA_FILE = "data.json"
 
@@ -10,9 +7,7 @@ DATA_FILE = "data.json"
 # 📝 ข้อความทั้งหมด (MESSAGES)
 # =========================================
 MESSAGES = {
-    # ---------------------------------------------------------
-    # 📜 คำอธิบายคำสั่ง (Command Descriptions) [NEW]
-    # ---------------------------------------------------------
+    # --- คำอธิบายคำสั่ง ---
     "desc_addadmin": "เพิ่มสิทธิ์แอดมินให้ผู้ใช้หรือบทบาท",
     "desc_removeadmin": "ลบสิทธิ์แอดมิน",
     "desc_addsupport": "เพิ่มสิทธิ์ Support (ทีมงาน)",
@@ -25,9 +20,7 @@ MESSAGES = {
     "desc_ticketf": "ตั้งค่าระบบ Ticket ใน Forum",
     "desc_gamble": "สร้างห้องสุ่มกาชา/เติมเงิน",
 
-    # ---------------------------------------------------------
-    # ⚙️ ระบบทั่วไป (System)
-    # ---------------------------------------------------------
+    # --- ระบบทั่วไป ---
     "no_permission": "🚫 คุณไม่มีสิทธิ์ใช้คำสั่งนี้",
     "cmd_success": "✅ ดำเนินการเรียบร้อย",
     "loading": "⏳ กำลังประมวลผล...",
@@ -92,13 +85,15 @@ MESSAGES = {
 
     # --- Gamble User ---
     "gam_select_topup": "เติม Point (Top-up)",
-    "gam_opt_tm": "TrueMoney Wallet",
-    "gam_opt_pp": "PromptPay",
+    "gam_opt_tm": "TrueMoney Wallet (ซอง)",
+    "gam_opt_pp": "PromptPay (โอนสลิป)",
     
     "top_tm_modal_title": "เติมเงิน TrueMoney (ซอง)",
     "top_tm_lbl_link": "ลิ้งค์ซองอั่งเปา",
     "top_tm_sent": "✅ ส่งข้อมูลแล้ว รอแอดมินตรวจสอบ...",
     "top_tm_log": "🧧 **แจ้งเตือนเติมเงิน (ซอง)**\n👤 ผู้เติม: {user}\n🔗 ลิ้งค์: {link}",
+    "tm_auto_success": "✅ **เติมเงินสำเร็จ!**\n💰 คุณได้รับ: {amount} บาท\n💎 ได้รับแต้ม: {points} Point",
+    "tm_err_generic": "❌ เกิดข้อผิดพลาดในการเติมเงิน: {error}",
     
     "top_pp_msg": "🏦 **โอนเงินผ่าน PromptPay**\nโปรดโอนเงินและกดปุ่มยืนยันเพื่อส่งสลิป",
     "top_pp_btn_confirm": "ยืนยันการโอน (ส่งสลิป)",
@@ -199,7 +194,7 @@ MESSAGES = {
 }
 
 # =========================================
-# DATA MANAGEMENT & HELPER FUNCTIONS
+# DATA MANAGEMENT
 # =========================================
 def load_data():
     if not os.path.exists(DATA_FILE):
@@ -214,7 +209,10 @@ def save_data(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
 
-def is_admin_or_has_permission(interaction: discord.Interaction):
+# =========================================
+# HELPER FUNCTIONS
+# =========================================
+def is_admin_or_has_permission(interaction):
     data = load_data()
     user_id = interaction.user.id
     user_roles = [r.id for r in interaction.user.roles]
@@ -222,7 +220,7 @@ def is_admin_or_has_permission(interaction: discord.Interaction):
     if interaction.user.guild_permissions.administrator: return True
     return False
 
-def is_support_or_admin(interaction: discord.Interaction):
+def is_support_or_admin(interaction):
     if is_admin_or_has_permission(interaction): return True
     data = load_data()
     user_id = interaction.user.id
@@ -231,6 +229,13 @@ def is_support_or_admin(interaction: discord.Interaction):
     return False
 
 async def get_files_from_urls(urls):
+    # ฟังก์ชันช่วยโหลดรูปจาก URL
+    # จำเป็นต้อง import aiohttp, io, discord ในไฟล์นี้หากจะรันเทส
+    # แต่ปกติ function นี้จะถูก import ไปใช้ที่อื่น
+    import aiohttp
+    import io
+    import discord
+    
     files = []
     async with aiohttp.ClientSession() as session:
         for i, url in enumerate(urls):
