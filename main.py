@@ -41,9 +41,9 @@ MESSAGES = {
     # ---------------------------------------------------------
     # ปุ่มและสถานะ
     "auc_btn_default": "💳 เปิดการประมูล",
-    "auc_prompt_step2": "👇 กรุณากดปุ่มด้านล่างเพื่อกรอกข้อมูลส่วนที่ 2",
-    "auc_btn_step2": "กดกรอกข้อมูล 2",
-    "auc_closing": "🛑 กำลังปิดประมูล...",
+    "auc_prompt_step2": "กรุณากดปุ่มด้านล่างเพื่อกรอกข้อมูลส่วนที่ 2",
+    "auc_btn_step2": "กดกรอกข้อมูลที่ 2",
+    "auc_closing": "กำลังปิดประมูล...",
     "auc_no_data": "❌ เกิดข้อความผิดพลาด ไม่พบข้อมูลการประมูล",
     
     # Modal ขั้นตอนที่ 1 (ชื่อช่องกรอกข้อมูล)
@@ -52,13 +52,13 @@ MESSAGES = {
     "auc_ph_start": "ใส่ตัวเลขเท่านั้น",
     "auc_lbl_step": "บิดครั้งละ",
     "auc_ph_step": "ใส่ตัวเลขเท่านั้น",
-    "auc_lbl_close": "ราคาปิดประมูล (Auto Buy)",
+    "auc_lbl_close": "ราคาปิดประมูล",
     "auc_ph_close": "ใส่ตัวเลขเท่านั้น",
-    "auc_lbl_item": "สิ่งที่ได้ (ชื่อสินค้า)",
+    "auc_lbl_item": "สิ่งที่ได้",
     
     # Modal ขั้นตอนที่ 2
     "auc_step2_title": "📝 ข้อมูลการประมูล (2/2)",
-    "auc_lbl_link": "ลิ้งค์ดาวน์โหลดสินค้า",
+    "auc_lbl_link": "ลิ้งค์ดาวน์โหลดสินค้า(แอดมินจะไม่เห็น)",
     "auc_ph_link": "ใส่ลิ้งค์ดาวน์โหลดสินค้าของคุณ",
     "auc_lbl_rights": "สิทธิ์",
     "auc_ph_rights": "สิทธิ์ขาด / สิทธ์เชิงพาณิชย์",
@@ -513,7 +513,9 @@ async def end_auction_logic(channel_id):
         return
 
     winner_mention = f"<@{winner_id}>"
-    await channel.send(MESSAGES["auc_end_winner"].format(winner=winner_mention, count=data['auction_count'], price=auction_data['current_price'], time=data['lockdown_time']))
+    # Send Winner Announcement and capture the message
+    winner_msg = await channel.send(MESSAGES["auc_end_winner"].format(winner=winner_mention, count=data['auction_count'], price=auction_data['current_price'], time=data['lockdown_time']))
+    
     await asyncio.sleep(data['lockdown_time'])
 
     overwrites = {
@@ -528,6 +530,16 @@ async def end_auction_logic(channel_id):
     
     await channel.edit(overwrites=overwrites)
     
+    # Clean up clutter messages
+    try: await winner_msg.delete()
+    except: pass
+    
+    if auction_data.get('last_bid_msg_id'):
+        try:
+            last_bid_msg = await channel.fetch_message(auction_data['last_bid_msg_id'])
+            await last_bid_msg.delete()
+        except: pass
+
     embed = discord.Embed(description=MESSAGES["auc_lock_msg"].format(winner=winner_mention), color=discord.Color.green())
     embed.add_field(name="ปุ่มสำหรับผู้เปิดประมูล", value="ด้านล่าง")
     embed.set_image(url=auction_data['img_qr_url'])
@@ -744,8 +756,8 @@ class TicketCancelModal(discord.ui.Modal, title=MESSAGES["tf_modal_cancel_title"
                     description=MESSAGES["tf_log_cancel_desc"].format(count=data['ticket_count']),
                     color=discord.Color.red()
                 )
-                embed.add_field(name="👤 ผู้ขาย (Seller)", value=f"<@{self.seller_id}>", inline=True)
-                embed.add_field(name="👤 ผู้ซื้อ (Buyer)", value=f"<@{self.buyer_id}>", inline=True)
+                embed.add_field(name="🪧 ผู้ขาย", value=f"<@{self.seller_id}>", inline=True)
+                embed.add_field(name="👤 ผู้ซื้อ", value=f"<@{self.buyer_id}>", inline=True)
                 embed.add_field(name="🚫 ยกเลิกโดย", value=interaction.user.mention, inline=True)
                 embed.add_field(name="📝 เหตุผล", value=self.reason.value, inline=False)
                 embed.timestamp = datetime.datetime.now()
@@ -785,9 +797,9 @@ class AdminCloseView(discord.ui.View):
                     description=MESSAGES["tf_log_success_desc"].format(count=data["ticket_count"]),
                     color=discord.Color.green()
                 )
-                embed.add_field(name="👤 ผู้ขาย (Seller)", value=f"<@{self.seller_id}>", inline=True)
-                embed.add_field(name="👤 ผู้ซื้อ (Buyer)", value=f"<@{self.buyer_id}>", inline=True)
-                embed.add_field(name="👮 ปิดงานโดย", value=interaction.user.mention, inline=False)
+                embed.add_field(name="🪧 ผู้ขาย", value=f"<@{self.seller_id}>", inline=True)
+                embed.add_field(name="👤 ผู้ซื้อ", value=f"<@{self.buyer_id}>", inline=True)
+                embed.add_field(name="🔒 ปิดช่องโดย", value=interaction.user.mention, inline=False)
                 embed.timestamp = datetime.datetime.now()
                 await log_chan.send(embed=embed)
 
