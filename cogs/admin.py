@@ -10,7 +10,7 @@ class AdminSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="addadmin")
+    @app_commands.command(name="addadmin", description=MESSAGES["desc_addadmin"])
     async def addadmin(self, interaction: discord.Interaction, target: discord.User | discord.Role):
         if not is_admin_or_has_permission(interaction): return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
         data = load_data()
@@ -20,7 +20,7 @@ class AdminSystem(commands.Cog):
             await interaction.response.send_message(MESSAGES["sys_add_admin"].format(target=target.mention), ephemeral=True)
         else: await interaction.response.send_message(MESSAGES["sys_already_admin"].format(target=target.mention), ephemeral=True)
 
-    @app_commands.command(name="removeadmin")
+    @app_commands.command(name="removeadmin", description=MESSAGES["desc_removeadmin"])
     async def removeadmin(self, interaction: discord.Interaction, target: discord.User | discord.Role):
         if not is_admin_or_has_permission(interaction): return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
         data = load_data()
@@ -30,7 +30,7 @@ class AdminSystem(commands.Cog):
             await interaction.response.send_message(MESSAGES["sys_remove_admin"].format(target=target.mention), ephemeral=True)
         else: await interaction.response.send_message(MESSAGES["sys_not_admin"].format(target=target.mention), ephemeral=True)
 
-    @app_commands.command(name="addsupportadmin")
+    @app_commands.command(name="addsupportadmin", description=MESSAGES["desc_addsupport"])
     async def addsupportadmin(self, interaction: discord.Interaction, target: discord.User | discord.Role):
         if not is_admin_or_has_permission(interaction): return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
         data = load_data()
@@ -40,7 +40,7 @@ class AdminSystem(commands.Cog):
             await interaction.response.send_message(MESSAGES["sys_add_support"].format(target=target.mention), ephemeral=True)
         else: await interaction.response.send_message(MESSAGES["sys_already_support"].format(target=target.mention), ephemeral=True)
 
-    @app_commands.command(name="removesupportadmin")
+    @app_commands.command(name="removesupportadmin", description=MESSAGES["desc_removesupport"])
     async def removesupportadmin(self, interaction: discord.Interaction, target: discord.User | discord.Role):
         if not is_admin_or_has_permission(interaction): return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
         data = load_data()
@@ -50,7 +50,7 @@ class AdminSystem(commands.Cog):
             await interaction.response.send_message(MESSAGES["sys_remove_support"].format(target=target.mention), ephemeral=True)
         else: await interaction.response.send_message(MESSAGES["sys_not_support"].format(target=target.mention), ephemeral=True)
 
-    @app_commands.command(name="lockdown")
+    @app_commands.command(name="lockdown", description=MESSAGES["desc_lockdown"])
     async def lockdown_cmd(self, interaction: discord.Interaction, seconds: int):
         if not is_admin_or_has_permission(interaction): return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
         data = load_data()
@@ -58,7 +58,7 @@ class AdminSystem(commands.Cog):
         save_data(data)
         await interaction.response.send_message(MESSAGES["sys_lockdown_set"].format(seconds=seconds), ephemeral=True)
 
-    @app_commands.command(name="resetdata")
+    @app_commands.command(name="resetdata", description=MESSAGES["desc_resetdata"])
     async def resetdata(self, interaction: discord.Interaction):
         if not is_admin_or_has_permission(interaction): return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
         data = load_data()
@@ -67,7 +67,7 @@ class AdminSystem(commands.Cog):
         save_data(data)
         await interaction.response.send_message(MESSAGES["sys_reset_done"], ephemeral=True)
 
-    @app_commands.command(name="addpoint")
+    @app_commands.command(name="addpoint", description=MESSAGES["desc_addpoint"])
     async def addpoint(self, interaction: discord.Interaction, user: discord.User, amount: int):
         if not is_support_or_admin(interaction): return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
         data = load_data()
@@ -77,7 +77,7 @@ class AdminSystem(commands.Cog):
         save_data(data)
         await interaction.response.send_message(f"{MESSAGES['pt_add_success'].format(amount=amount, user=user.mention)} ({MESSAGES['pt_current'].format(points=data['points'][str_id])})", ephemeral=True)
 
-    @app_commands.command(name="removepoint")
+    @app_commands.command(name="removepoint", description=MESSAGES["desc_removepoint"])
     async def removepoint(self, interaction: discord.Interaction, user: discord.User, amount: int):
         if not is_support_or_admin(interaction): return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
         data = load_data()
