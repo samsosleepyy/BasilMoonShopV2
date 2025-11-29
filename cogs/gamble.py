@@ -5,8 +5,11 @@ import sys
 import os
 import random
 import asyncio
+
+# import utils เพื่อใช้ TrueMoneyGift
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import MESSAGES, load_data, save_data, is_admin_or_has_permission, get_files_from_urls
+from utils import TrueMoneyGift
 
 setup_cache = {}
 
@@ -130,11 +133,14 @@ class GamblePaymentModal(discord.ui.Modal, title=MESSAGES["gam_modal_pay_title"]
         await interaction.response.defer(ephemeral=True)
         cache = setup_cache[self.user_id]
         cache.update({"pay_tm": self.tm_text.value,"pay_pp": self.pp_text.value,"pay_phone": self.phone.value,"pay_qr": self.qr.value})
+        
+        # Resolve Channel
         raw_channel = cache["target_channel"]
         target_channel = interaction.guild.get_channel(raw_channel.id)
         if not target_channel:
              try: target_channel = await interaction.guild.fetch_channel(raw_channel.id)
              except: return await interaction.followup.send("❌ ไม่พบช่องที่เลือก", ephemeral=True)
+        
         embed = discord.Embed(description=cache["content"], color=discord.Color.green())
         embed.set_image(url=cache["img_main"])
         view = GambleMainView(cache)
@@ -149,14 +155,18 @@ class GambleMainView(discord.ui.View):
     def __init__(self, config):
         super().__init__(timeout=None)
         self.config = config
+        
+        # 1. Gacha Button
         gacha_btn = discord.ui.Button(label=config["btn_text"], style=discord.ButtonStyle.green, custom_id="gacha_play", emoji="🎰")
         gacha_btn.callback = self.play_gacha
         self.add_item(gacha_btn)
         
+        # 2. TrueMoney Button
         tm_btn = discord.ui.Button(label=MESSAGES["gam_opt_tm"], style=discord.ButtonStyle.red, custom_id="topup_tm", emoji="🧧")
         tm_btn.callback = self.topup_tm
         self.add_item(tm_btn)
 
+        # 3. PromptPay Button
         pp_btn = discord.ui.Button(label=MESSAGES["gam_opt_pp"], style=discord.ButtonStyle.blurple, custom_id="topup_pp", emoji="🏦")
         pp_btn.callback = self.topup_pp
         self.add_item(pp_btn)
@@ -186,6 +196,7 @@ class GambleMainView(discord.ui.View):
         await interaction.edit_original_response(embed=embed_res)
 
     async def topup_tm(self, interaction: discord.Interaction):
+        # ส่ง Config ไปด้วย เพื่อดึงเบอร์จาก Config นั้นๆ
         await interaction.response.send_modal(TopUpTMModal(self.config))
 
     async def topup_pp(self, interaction: discord.Interaction):
@@ -196,14 +207,47 @@ class GambleMainView(discord.ui.View):
 
 class TopUpTMModal(discord.ui.Modal, title=MESSAGES["top_tm_modal_title"]):
     link = discord.ui.TextInput(label=MESSAGES["top_tm_lbl_link"])
+    
     def __init__(self, config):
         super().__init__()
-        self.config = config
+        self.config = config # เก็บ Config ที่มีเบอร์โทรไว้
+
     async def on_submit(self, interaction: discord.Interaction):
-        log_id = self.config["log_channel"].id
-        log_channel = interaction.guild.get_channel(log_id)
-        if log_channel: await log_channel.send(MESSAGES["top_tm_log"].format(user=interaction.user.mention, link=self.link.value))
-        await interaction.response.send_message(MESSAGES["top_tm_sent"], ephemeral=True)
+        await interaction.response.defer(ephemeral=True)
+        tm_link = self.link.value.strip()
+        
+        # 🔥 ใช้เบอร์จาก Config ที่ผู้ใช้ตั้งค่าไว้ใน Setup 3/3
+        target_phone = self.config.get("pay_phone", "")
+        
+        if not target_phone:
+             return await interaction.followup.send("❌ ระบบยังไม่ได้ตั้งค่าเบอร์รับเงิน", ephemeral=True)
+
+        redeemer = TrueMoneyGift(target_phone)
+        result = await redeemer.redeem(tm_link)
+        
+        if result["success"]:
+            amount = int(result["amount"])
+            points_to_give = amount
+            
+            data = load_data()
+            str_id = str(interaction.user.id)
+            data["points"][str_id] = data["points"].get(str_id, 0) + points_to_give
+            save_data(data)
+            
+            embed = discord.Embed(description=MESSAGES["tm_auto_success"].format(amount=amount, points=points_to_give), color=discord.Color.green())
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            
+            # Log
+            log_id = self.config["log_channel"].id
+            log_channel = interaction.guild.get_channel(log_id)
+            if log_channel:
+                log_embed = discord.Embed(title="🤖 แจ้งเตือนเติมเงิน (Auto)", color=discord.Color.gold())
+                log_embed.add_field(name="ผู้เติม", value=interaction.user.mention, inline=True)
+                log_embed.add_field(name="จำนวนเงิน", value=f"{amount} บาท", inline=True)
+                log_embed.set_footer(text=f"Link: {tm_link}")
+                await log_channel.send(embed=log_embed)
+        else:
+            await interaction.followup.send(MESSAGES["tm_err_generic"].format(error=result["message"]), ephemeral=True)
 
 class PromptPayConfirmView(discord.ui.View):
     def __init__(self, config):
