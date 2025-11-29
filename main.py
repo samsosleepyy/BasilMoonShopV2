@@ -36,9 +36,9 @@ MESSAGES = {
     "auc_deny_log": "⊹ [{seller}] .ᐟ⊹\nประมูลของคุณไม่ได้รับอนุมัติจากแอดมิน : {admin}❌\nเหตุผล : {reason}",
     
     # --- ข้อความ Auction (จบ/ยกเลิก) ---
-    "auc_end_winner": "📜 | ปิดการประมูลครั้งที่ - {count}\nจบที่ราคา - {price} บ.-\n-# ช่องนี้กำลังจะถูกล็อคภายใน {time} วินาทีเพื่อทำธุรกรรม🔐",
+    "auc_end_winner": "📜 | {winner} ชนะการประมูลครั้งที่ - {count}\nจบที่ราคา - {price} บ.-\n-# ช่องนี้กำลังจะถูกล็อคภายใน {time} วินาทีเพื่อทำธุรกรรม🔐",
     "auc_end_no_bid": "การประมูลครั้งที่ - {count}\nโดย {seller}\nการประมูลหมดเวลา (ไม่มีผู้ประมูล)",
-    "auc_lock_msg": "ช่องนี้ได้เป็นช่องส่วนตัวแล้ว🔐\nผู้ชนะประมูลสามารถชำระเงินได้เลย",
+    "auc_lock_msg": "ช่องนี้ได้เป็นช่องส่วนตัวแล้ว🔐\n({winner} ผู้ชนะประมูล) สามารถชำระเงินได้เลย",
     "auc_success_log": "── .✦ 𝐒𝐮𝐜𝐜𝐞𝐬𝐬 ✦. ──\n╭﹕การประมูลครั้งที่ - {count}\n | ﹕โดย {seller}\n | ﹕ผู้ชนะประมูล {winner}\n╰ ﹕จบที่ราคา : {price}",
     "auc_cancel_log": "╭﹕การประมูลครั้งที่ - {count}\n | ﹕โดย {seller}\n | ﹕ถูกยกเลิกโดย {user}\n╰ ﹕เหตุผล : {reason}",
     "auc_dm_success": "✅ ส่งลิ้งค์สินค้าทาง DM แล้ว",
@@ -53,6 +53,7 @@ MESSAGES = {
     "tf_room_created": "ช่องนี้ได้เป็นช่องส่วนตัวแล้ว🔐\nสามารถทำธุรกรรมได้เลย\n{buyer} {seller}",
     "tf_log_report": "⚠️ มีการรายงานฟอรั่ม {channel}\nโดย: {user}\nเหตุผล: {reason}",
     "tf_log_cancel": "⚠️ Ticket ID-{count} ถูกยกเลิก\nโดย: {user}\nเหตุผล: {reason}",
+    "tf_log_success": "✅ ธุรกรรมเสร็จสิ้น Ticket ID-{count}\nผู้ขาย: {seller}\nผู้ซื้อ: {buyer}\nปิดงานโดยแอดมิน: {admin}",
     "tf_wait_admin": "เรียกแอดมินมาตรวจสอบ...",
 }
 
@@ -331,7 +332,6 @@ class ApprovalView(discord.ui.View):
         
         files_to_send = await get_files_from_urls(self.auction_data["img_product_urls"])
         
-        # ส่ง Embed ก่อน แล้วค่อยส่งรูปตามหลัง
         view = AuctionControlView(self.auction_data['seller_id'])
         msg = await auction_channel.send(embed=main_embed, view=view)
         if files_to_send:
@@ -553,8 +553,8 @@ class TicketForumView(discord.ui.View):
         ticket_chan = await interaction.guild.create_text_channel(chan_name, category=category, overwrites=overwrites)
         
         msg = MESSAGES["tf_room_created"].format(buyer=interaction.user.mention, seller=interaction.channel.owner.mention)
-        # ส่ง log_id ไปด้วยเพื่อให้ modal ใช้งานได้
-        view = TicketControlView(interaction.channel.id, conf["log_id"])
+        # ส่ง log_id และ user id ไปด้วยเพื่อให้ View ขั้นตอนต่อไปใช้งานได้
+        view = TicketControlView(interaction.channel.id, conf["log_id"], interaction.user.id, interaction.channel.owner_id)
         await ticket_chan.send(msg, view=view)
         await interaction.response.send_message(f"สร้างห้องแล้วที่ {ticket_chan.mention}", ephemeral=True)
 
@@ -576,17 +576,19 @@ class ReportModal(discord.ui.Modal, title="รายงานโพสต์"):
         await interaction.response.send_message("ส่งรายงานเรียบร้อย", ephemeral=True)
 
 class TicketControlView(discord.ui.View):
-    def __init__(self, forum_thread_id, log_id):
+    def __init__(self, forum_thread_id, log_id, buyer_id, seller_id):
         super().__init__(timeout=None)
         self.forum_thread_id = forum_thread_id
         self.log_id = log_id
+        self.buyer_id = buyer_id
+        self.seller_id = seller_id
 
     @discord.ui.button(label="เสร็จสิ้น(ปิดช่อง)", style=discord.ButtonStyle.green)
     async def finish(self, interaction: discord.Interaction, button: discord.ui.Button):
         msg = MESSAGES["tf_wait_admin"]
         for sid in data["supports"]: msg += f" <@{sid}>"
         await interaction.channel.send(msg)
-        await interaction.channel.send("ปุ่มสำหรับแอดมิน:", view=AdminCloseView(self.forum_thread_id))
+        await interaction.channel.send("ปุ่มสำหรับแอดมิน:", view=AdminCloseView(self.forum_thread_id, self.log_id, self.buyer_id, self.seller_id))
         await interaction.response.defer()
 
     @discord.ui.button(label="ยกเลิก", style=discord.ButtonStyle.red)
@@ -611,13 +613,30 @@ class TicketCancelModal(discord.ui.Modal, title="เหตุผลการย�
         await interaction.channel.delete()
 
 class AdminCloseView(discord.ui.View):
-    def __init__(self, forum_thread_id):
+    def __init__(self, forum_thread_id, log_id, buyer_id, seller_id):
         super().__init__(timeout=None)
         self.forum_thread_id = forum_thread_id
+        self.log_id = log_id
+        self.buyer_id = buyer_id
+        self.seller_id = seller_id
+
     @discord.ui.button(label="ปิดช่องและลบโพสต์", style=discord.ButtonStyle.danger)
     async def close_all(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not is_support_or_admin(interaction): return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
         await interaction.response.send_message("กำลังดำเนินการ...", ephemeral=True)
+        
+        # ส่ง Log สำเร็จ
+        if self.log_id:
+            log_chan = bot.get_channel(self.log_id)
+            if log_chan:
+                embed = discord.Embed(description=MESSAGES["tf_log_success"].format(
+                    count=data["ticket_count"], 
+                    seller=f"<@{self.seller_id}>", 
+                    buyer=f"<@{self.buyer_id}>", 
+                    admin=interaction.user.mention
+                ), color=discord.Color.green())
+                await log_chan.send(embed=embed)
+
         try: await interaction.channel.delete()
         except: pass
         try:
