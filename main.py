@@ -12,14 +12,154 @@ import random
 from keep_alive import keep_alive
 
 # =========================================
-# 📝 CONFIGURATION & TEXT MESSAGES
+# 📝 CONFIGURATION & TEXT MESSAGES (แก้ไขข้อความทุกอย่างที่นี่)
 # =========================================
 MESSAGES = {
-    # --- ระบบทั่วไป ---
+    # ---------------------------------------------------------
+    # ⚙️ ระบบทั่วไป (System)
+    # ---------------------------------------------------------
     "no_permission": "🚫 คุณไม่มีสิทธิ์ใช้คำสั่งนี้",
     "cmd_success": "✅ ดำเนินการเรียบร้อย",
     "loading": "⏳ กำลังประมวลผล...",
     "processing": "⚙️ กำลังดำเนินการ...",
+    
+    # ข้อความ Admin Commands
+    "sys_add_admin": "✅ เพิ่ม {target} เป็นแอดมิน",
+    "sys_already_admin": "⚠️ {target} เป็นแอดมินอยู่แล้ว",
+    "sys_remove_admin": "✅ ลบ {target} ออกจากแอดมิน",
+    "sys_not_admin": "⚠️ {target} ไม่ได้เป็นแอดมิน",
+    
+    "sys_add_support": "✅ เพิ่ม {target} เป็น Support",
+    "sys_already_support": "⚠️ {target} เป็น Support อยู่แล้ว",
+    "sys_remove_support": "✅ ลบ {target} ออกจาก Support",
+    "sys_not_support": "⚠️ {target} ไม่ได้เป็น Support",
+    
+    "sys_lockdown_set": "✅ ตั้งเวลา Lockdown: {seconds} วินาที",
+    "sys_reset_done": "✅ รีเซ็ตข้อมูลเรียบร้อย",
+
+    # ---------------------------------------------------------
+    # 🔨 ระบบประมูล (Auction)
+    # ---------------------------------------------------------
+    # ปุ่มและสถานะ
+    "auc_btn_default": "💳 เปิดการประมูล",
+    "auc_prompt_step2": "👇 กรุณากดปุ่มด้านล่างเพื่อกรอกข้อมูลส่วนที่ 2",
+    "auc_btn_step2": "กดกรอกข้อมูล 2",
+    "auc_closing": "🛑 กำลังปิดประมูล...",
+    "auc_no_data": "❌ เกิดข้อความผิดพลาด ไม่พบข้อมูลการประมูล",
+    
+    # Modal ขั้นตอนที่ 1 (ชื่อช่องกรอกข้อมูล)
+    "auc_step1_title": "📝 ข้อมูลการประมูล (1/2)",
+    "auc_lbl_start": "ราคาเริ่มต้น",
+    "auc_ph_start": "ใส่ตัวเลขเท่านั้น",
+    "auc_lbl_step": "บิดครั้งละ",
+    "auc_ph_step": "ใส่ตัวเลขเท่านั้น",
+    "auc_lbl_close": "ราคาปิดประมูล (Auto Buy)",
+    "auc_ph_close": "ใส่ตัวเลขเท่านั้น",
+    "auc_lbl_item": "สิ่งที่ได้ (ชื่อสินค้า)",
+    
+    # Modal ขั้นตอนที่ 2
+    "auc_step2_title": "📝 ข้อมูลการประมูล (2/2)",
+    "auc_lbl_link": "ลิ้งค์ดาวน์โหลดสินค้า",
+    "auc_ph_link": "ใส่ลิ้งค์ดาวน์โหลดสินค้าของคุณ",
+    "auc_lbl_rights": "สิทธิ์",
+    "auc_ph_rights": "สิทธิ์ขาด / สิทธ์เชิงพาณิชย์",
+    "auc_lbl_extra": "เพิ่มเติม",
+    "auc_ph_extra": "รายละเอียดเพิ่มเติม (ไม่บังคับ)",
+    "auc_lbl_time": "เวลาปิดประมูล (ชช:นน)",
+    "auc_ph_time": "เช่น 01:00 คือ 1 ชั่วโมง",
+
+    # การตรวจสอบรูปภาพ
+    "auc_created_channel": "✅ สร้างช่องส่งรูปแล้วที่ {channel}",
+    "auc_wait_img_1": "{user} 📦 ส่งรูปสินค้าของคุณที่ช่องนี้\n-# **สามารถส่งได้หลายรูปใน 1 ข้อความ** เพื่อให้แสดงเป็นอัลบั้มรวม",
+    "auc_wait_img_2": "🧾 โปรดส่งรูป QR code หรือช่องทางการชำระเงิน\n-# ข้อมูลตรงนี้จะไม่มีการเผยแพร่",
+    "auc_img_received": "📥 ได้รับรูปสินค้าเรียบร้อย รอแอดมินยืนยัน ⏳",
+    "auc_err_num": "❌ กรุณากรอกช่องราคาเป็นตัวเลขเท่านั้น",
+    "auc_err_time": "❌ รูปแบบเวลาไม่ถูกต้อง (ใช้ ชช:นน)",
+
+    # การอนุมัติ (แอดมิน)
+    "auc_embed_request_title": "คำขอเปิดประมูลใหม่", # หัวข้อ Embed ขออนุมัติ
+    "auc_btn_approve": "อนุมัติ",
+    "auc_btn_deny": "ไม่อนุมัติ",
+    "auc_lbl_deny_reason": "เหตุผล",
+    "auc_admin_approve_log": "✅ อนุมัติการประมูล สร้างห้องที่ {channel}",
+    "auc_modal_deny_title": "เหตุผลการไม่อนุมัติ",
+    "auc_deny_msg": "❌ ปฏิเสธการประมูลแล้ว",
+    "auc_log_deny_title": "🚫 ไม่อนุมัติการประมูล", # หัวข้อ Embed Log
+    
+    # หน้าห้องประมูล (Public)
+    "auc_embed_title": "# ˚₊‧꒰ა ☆ ໒꒱ ‧₊˚\n*🔥 เปิดประมูล!*",
+    "auc_btn_force_close": "🧾 ปิดประมูล",
+    
+    # การบิด (Bidding)
+    "auc_bid_response": "# {user} ราคา {amount}",
+    "auc_bid_outbid": "\n{old_winner} โดนนำแล้ว!",
+    "auc_bid_autobuy": "\n-# ⚠️ถึงราคาปิดประมูลแล้ว จะปิดอัตโนมัติหากไม่มีใครเพิ่มใน 10 นาที",
+    
+    # จบประมูล
+    "auc_end_winner": "🎉 **จบการประมูล!**\n📜 ครั้งที่ {count} | ผู้ชนะ: {winner}\n💰 จบที่ราคา: **{price} บาท**\n-# 🔐 ช่องนี้จะถูกล็อคใน {time} วินาที",
+    "auc_end_no_bid": "⚠️ **การประมูลจบลง (ไม่มีผู้ประมูล)**\n📜 ครั้งที่ {count} | ผู้ขาย: {seller}",
+    "auc_lock_msg": "🔐 **ช่องนี้เป็นส่วนตัวแล้ว**\n({winner} ผู้ชนะประมูล) สามารถชำระเงินได้เลยครับ",
+    
+    # การชำระเงิน (Transaction)
+    "auc_btn_confirm": "ยืนยันเสร็จสิ้น✅",
+    "auc_btn_cancel": "ยกเลิก❌",
+    "auc_btn_double_confirm": "ยืนยันอีกครั้ง",
+    "auc_check_money": "⚠️ ตรวจสอบให้แน่ใจว่าได้รับเงินแล้ว ทางเราจะไม่รับผิดชอบใดๆ",
+    "auc_modal_cancel_title": "เหตุผลการยกเลิก",
+    "auc_msg_cancel_success": "✅ ยกเลิกเรียบร้อย ลบช่องใน 5 วินาที",
+    
+    # DM ส่งของ
+    "auc_dm_success": "✅ ส่งลิ้งค์สินค้าทาง DM แล้วครับ",
+    "auc_dm_fail": "⚠️ ไม่สามารถส่ง DM หา {user} ได้ (เขาอาจปิด DM)",
+    "auc_dm_content": "📦 **ดาวน์โหลดสินค้าของคุณ:**\n{link}",
+    
+    # Logs (Embeds)
+    "auc_success_log": "── .✦ 𝐒𝐮𝐜𝐜𝐞𝐬𝐬 ✦. ──\n╭﹕📜 ประมูลครั้งที่ - {count}\n | ﹕👤 โดย {seller}\n | ﹕🏆 ผู้ชนะ {winner}\n╰ ﹕💰 จบที่ราคา : {price}",
+    "auc_cancel_log": "╭﹕🚫 **ยกเลิกการประมูล** ครั้งที่ {count}\n | ﹕👤 โดย {seller}\n | ﹕❌ ยกเลิกโดย {user}\n╰ ﹕📝 เหตุผล : {reason}",
+
+    # ---------------------------------------------------------
+    # 🎫 ระบบ Ticket Forum
+    # ---------------------------------------------------------
+    "tf_setup_success": "✅ ตั้งค่า Forum {forum} เรียบร้อย",
+    "tf_guide_msg": "👇 กดสั่งซื้อสินค้าตรงนี้", # ข้อความในกระทู้
+    
+    # ปุ่มหน้ากระทู้
+    "tf_btn_buy": "🛒 สั่งซื้อ (Tickets)",
+    "tf_btn_buying": "⏳ อยู่ในระหว่างการซื้อ", # ปุ่มสีเทา
+    "tf_btn_report": "🚩 รายงาน",
+    
+    # Error Checks
+    "tf_err_own_post": "❌ คุณไม่สามารถสั่งซื้อสินค้าของตัวเองได้",
+    "tf_err_own_report": "❌ คุณไม่สามารถรายงานโพสต์ของตัวเองได้",
+    "tf_only_seller": "🚫 เฉพาะ **ผู้ขาย** เท่านั้นที่สามารถกดปุ่มนี้ได้",
+    
+    # ในห้อง Ticket
+    "tf_room_created": "🔐 **ช่องซื้อขายส่วนตัว**\n👤 ผู้ซื้อ: {buyer}\n👤 ผู้ขาย: {seller}\n-# สามารถเจรจาและโอนเงินได้เลยครับ",
+    "tf_wait_admin": "🔔 กำลังเรียกแอดมินมาตรวจสอบ...",
+    "tf_admin_panel_msg": "🛡️ ปุ่มสำหรับแอดมิน:",
+    
+    # ปุ่มควบคุม Ticket
+    "tf_btn_finish": "เสร็จสิ้น(ปิดช่อง)",
+    "tf_btn_cancel": "ยกเลิก",
+    "tf_btn_admin_close": "ปิดช่องและลบโพสต์",
+    
+    # Modal รายงาน/ยกเลิก
+    "tf_modal_report_title": "รายงานโพสต์",
+    "tf_lbl_reason": "เหตุผล",
+    "tf_msg_report_success": "✅ ส่งรายงานเรียบร้อย",
+    "tf_modal_cancel_title": "เหตุผลการยกเลิก",
+    
+    # Logs Ticket (Embeds)
+    "tf_log_report_title": "🚩 มีการรายงานโพสต์",
+    "tf_log_cancel_title": "❌ 𝗧𝗿𝗮𝗻𝘀𝗮𝗰𝘁𝗶𝗼𝗻 𝗖𝗮𝗻𝗰𝗲𝗹𝗹𝗲𝗱",
+    "tf_log_cancel_desc": "รายการถูกยกเลิก (Ticket ID-{count})",
+    "tf_log_success_title": "✅ 𝗧𝗿𝗮𝗻𝘀𝗮𝗰𝘁𝗶𝗼𝗻 𝗖𝗼𝗺𝗽𝗹𝗲𝘁𝗲𝗱",
+    "tf_log_success_desc": "ธุรกรรมเสร็จสิ้น (Ticket ID-{count})",
+
+    # ---------------------------------------------------------
+    # 🎰 ระบบ Gamble / Gacha & Points
+    # ---------------------------------------------------------
+    "msg_error_num": "❌ กรุณากรอกตัวเลขเท่านั้น",
     "insufficient_points": "❌ แต้มของคุณไม่พอ (ต้องการ {cost} แต้ม)",
     "point_balance": "💰 แต้มคงเหลือ: {points}",
     
@@ -93,96 +233,6 @@ MESSAGES = {
     "play_anim_title": "🎰 กำลังสุ่ม...",
     "play_result_title": "🎉 ผลการสุ่ม",
     "play_result_desc": "คุณได้รับ: **รางวัลที่ {rank}**",
-    
-    # --- เดิม (Auction/Ticket) ---
-    "sys_add_admin": "✅ เพิ่ม {target} เป็นแอดมิน",
-    "sys_already_admin": "⚠️ {target} เป็นแอดมินอยู่แล้ว",
-    "sys_remove_admin": "✅ ลบ {target} ออกจากแอดมิน",
-    "sys_not_admin": "⚠️ {target} ไม่ได้เป็นแอดมิน",
-    "sys_add_support": "✅ เพิ่ม {target} เป็น Support",
-    "sys_already_support": "⚠️ {target} เป็น Support อยู่แล้ว",
-    "sys_remove_support": "✅ ลบ {target} ออกจาก Support",
-    "sys_not_support": "⚠️ {target} ไม่ได้เป็น Support",
-    "sys_lockdown_set": "✅ ตั้งเวลา Lockdown: {seconds} วินาที",
-    "sys_reset_done": "✅ รีเซ็ตข้อมูลเรียบร้อย",
-    "auc_btn_default": "💳 เปิดการประมูล",
-    "auc_prompt_step2": "👇 กรุณากดปุ่มด้านล่างเพื่อกรอกข้อมูลส่วนที่ 2",
-    "auc_btn_step2": "กดกรอกข้อมูล 2",
-    "auc_closing": "🛑 กำลังปิดประมูล...",
-    "auc_no_data": "❌ เกิดข้อความผิดพลาด ไม่พบข้อมูลการประมูล",
-    "auc_step1_title": "📝 ข้อมูลการประมูล (1/2)",
-    "auc_lbl_start": "ราคาเริ่มต้น",
-    "auc_ph_start": "ใส่ตัวเลขเท่านั้น",
-    "auc_lbl_step": "บิดครั้งละ",
-    "auc_ph_step": "ใส่ตัวเลขเท่านั้น",
-    "auc_lbl_close": "ราคาปิดประมูล (Auto Buy)",
-    "auc_ph_close": "ใส่ตัวเลขเท่านั้น",
-    "auc_lbl_item": "สิ่งที่ได้ (ชื่อสินค้า)",
-    "auc_step2_title": "📝 ข้อมูลการประมูล (2/2)",
-    "auc_lbl_link": "ลิ้งค์ดาวน์โหลดสินค้า",
-    "auc_ph_link": "ใส่ลิ้งค์ดาวน์โหลดสินค้าของคุณ",
-    "auc_lbl_rights": "สิทธิ์",
-    "auc_ph_rights": "สิทธิ์ขาด / สิทธ์เชิงพาณิชย์",
-    "auc_lbl_extra": "เพิ่มเติม",
-    "auc_ph_extra": "รายละเอียดเพิ่มเติม (ไม่บังคับ)",
-    "auc_lbl_time": "เวลาปิดประมูล (ชช:นน)",
-    "auc_ph_time": "เช่น 01:00 คือ 1 ชั่วโมง",
-    "auc_created_channel": "✅ สร้างช่องส่งรูปแล้วที่ {channel}",
-    "auc_wait_img_1": "{user} 📦 ส่งรูปสินค้าของคุณที่ช่องนี้\n-# **สามารถส่งได้หลายรูปใน 1 ข้อความ** เพื่อให้แสดงเป็นอัลบั้มรวม",
-    "auc_wait_img_2": "🧾 โปรดส่งรูป QR code หรือช่องทางการชำระเงิน\n-# ข้อมูลตรงนี้จะไม่มีการเผยแพร่",
-    "auc_img_received": "📥 ได้รับรูปสินค้าเรียบร้อย รอแอดมินยืนยัน ⏳",
-    "auc_err_num": "❌ กรุณากรอกช่องราคาเป็นตัวเลขเท่านั้น",
-    "auc_err_time": "❌ รูปแบบเวลาไม่ถูกต้อง (ใช้ ชช:นน)",
-    "auc_embed_request_title": "คำขอเปิดประมูลใหม่",
-    "auc_btn_approve": "อนุมัติ",
-    "auc_btn_deny": "ไม่อนุมัติ",
-    "auc_lbl_deny_reason": "เหตุผล",
-    "auc_admin_approve_log": "✅ อนุมัติการประมูล สร้างห้องที่ {channel}",
-    "auc_modal_deny_title": "เหตุผลการไม่อนุมัติ",
-    "auc_deny_msg": "❌ ปฏิเสธการประมูลแล้ว",
-    "auc_log_deny_title": "🚫 ไม่อนุมัติการประมูล",
-    "auc_embed_title": "# ˚₊‧꒰ა ☆ ໒꒱ ‧₊˚\n*🔥 เปิดประมูล!*",
-    "auc_btn_force_close": "🧾 ปิดประมูล",
-    "auc_bid_response": "# {user} ราคา {amount}",
-    "auc_bid_outbid": "\n{old_winner} โดนนำแล้ว!",
-    "auc_bid_autobuy": "\n-# ⚠️ถึงราคาปิดประมูลแล้ว จะปิดอัตโนมัติหากไม่มีใครเพิ่มใน 10 นาที",
-    "auc_end_winner": "🎉 **จบการประมูล!**\n📜 ครั้งที่ {count} | ผู้ชนะ: {winner}\n💰 จบที่ราคา: **{price} บาท**\n-# 🔐 ช่องนี้จะถูกล็อคใน {time} วินาที",
-    "auc_end_no_bid": "⚠️ **การประมูลจบลง (ไม่มีผู้ประมูล)**\n📜 ครั้งที่ {count} | ผู้ขาย: {seller}",
-    "auc_lock_msg": "🔐 **ช่องนี้เป็นส่วนตัวแล้ว**\n({winner} ผู้ชนะประมูล) สามารถชำระเงินได้เลยครับ",
-    "auc_btn_confirm": "ยืนยันเสร็จสิ้น✅",
-    "auc_btn_cancel": "ยกเลิก❌",
-    "auc_btn_double_confirm": "ยืนยันอีกครั้ง",
-    "auc_check_money": "⚠️ ตรวจสอบให้แน่ใจว่าได้รับเงินแล้ว ทางเราจะไม่รับผิดชอบใดๆ",
-    "auc_modal_cancel_title": "เหตุผลการยกเลิก",
-    "auc_msg_cancel_success": "✅ ยกเลิกเรียบร้อย ลบช่องใน 5 วินาที",
-    "auc_dm_success": "✅ ส่งลิ้งค์สินค้าทาง DM แล้วครับ",
-    "auc_dm_fail": "⚠️ ไม่สามารถส่ง DM หา {user} ได้ (เขาอาจปิด DM)",
-    "auc_dm_content": "📦 **ดาวน์โหลดสินค้าของคุณ:**\n{link}",
-    "auc_success_log": "── .✦ 𝐒𝐮𝐜𝐜𝐞𝐬𝐬 ✦. ──\n╭﹕📜 ประมูลครั้งที่ - {count}\n | ﹕👤 โดย {seller}\n | ﹕🏆 ผู้ชนะ {winner}\n╰ ﹕💰 จบที่ราคา : {price}",
-    "auc_cancel_log": "╭﹕🚫 **ยกเลิกการประมูล** ครั้งที่ {count}\n | ﹕👤 โดย {seller}\n | ﹕❌ ยกเลิกโดย {user}\n╰ ﹕📝 เหตุผล : {reason}",
-    "tf_setup_success": "✅ ตั้งค่า Forum {forum} เรียบร้อย",
-    "tf_guide_msg": "👇 กดสั่งซื้อสินค้าตรงนี้",
-    "tf_btn_buy": "🛒 สั่งซื้อ (Tickets)",
-    "tf_btn_buying": "⏳ อยู่ในระหว่างการซื้อ",
-    "tf_btn_report": "🚩 รายงาน",
-    "tf_err_own_post": "❌ คุณไม่สามารถสั่งซื้อสินค้าของตัวเองได้",
-    "tf_err_own_report": "❌ คุณไม่สามารถรายงานโพสต์ของตัวเองได้",
-    "tf_only_seller": "🚫 เฉพาะ **ผู้ขาย** เท่านั้นที่สามารถกดปุ่มนี้ได้",
-    "tf_room_created": "🔐 **ช่องซื้อขายส่วนตัว**\n👤 ผู้ซื้อ: {buyer}\n👤 ผู้ขาย: {seller}\n-# สามารถเจรจาและโอนเงินได้เลยครับ",
-    "tf_wait_admin": "🔔 กำลังเรียกแอดมินมาตรวจสอบ...",
-    "tf_admin_panel_msg": "🛡️ ปุ่มสำหรับแอดมิน:",
-    "tf_btn_finish": "เสร็จสิ้น(ปิดช่อง)",
-    "tf_btn_cancel": "ยกเลิก",
-    "tf_btn_admin_close": "ปิดช่องและลบโพสต์",
-    "tf_modal_report_title": "รายงานโพสต์",
-    "tf_lbl_reason": "เหตุผล",
-    "tf_msg_report_success": "✅ ส่งรายงานเรียบร้อย",
-    "tf_modal_cancel_title": "เหตุผลการยกเลิก",
-    "tf_log_report_title": "🚩 มีการรายงานโพสต์",
-    "tf_log_cancel_title": "❌ 𝗧𝗿𝗮𝗻𝘀𝗮𝗰𝘁𝗶𝗼𝗻 𝗖𝗮𝗻𝗰𝗲𝗹𝗹𝗲𝗱",
-    "tf_log_cancel_desc": "รายการถูกยกเลิก (Ticket ID-{count})",
-    "tf_log_success_title": "✅ 𝗧𝗿𝗮𝗻𝘀𝗮𝗰𝘁𝗶𝗼𝗻 𝗖𝗼𝗺𝗽𝗹𝗲𝘁𝗲𝗱",
-    "tf_log_success_desc": "ธุรกรรมเสร็จสิ้น (Ticket ID-{count})",
 }
 
 DATA_FILE = "data.json"
@@ -327,10 +377,9 @@ class GambleStep1Modal(discord.ui.Modal, title=MESSAGES["gam_modal_1_title"]):
             "cost": cost_val
         })
         
-        # Go to Step 2
-        await interaction.message.delete() # Remove old step
+        # Change to Step 2 (EDIT Message instead of Delete)
         view = GambleSetupView2(self.user_id)
-        await interaction.response.send_message(MESSAGES["gam_setup_2_msg"], view=view, ephemeral=True)
+        await interaction.response.edit_message(content=MESSAGES["gam_setup_2_msg"], view=view)
 
 class GambleSetupView2(discord.ui.View):
     def __init__(self, user_id):
@@ -358,9 +407,9 @@ class GambleSetupView2(discord.ui.View):
         if not setup_cache[self.user_id].get("log_channel"):
              return await interaction.response.send_message("❌ กรุณาเลือกช่อง Log ก่อน", ephemeral=True)
         
-        await interaction.message.delete()
+        # Change to Step 3 (EDIT Message)
         view = GambleSetupView3(self.user_id)
-        await interaction.response.send_message(MESSAGES["gam_setup_3_msg"], view=view, ephemeral=True)
+        await interaction.response.edit_message(content=MESSAGES["gam_setup_3_msg"], view=view)
 
 class GambleChancesModal(discord.ui.Modal, title=MESSAGES["gam_modal_chance_title"]):
     c1 = discord.ui.TextInput(label=MESSAGES["gam_lbl_c1"], placeholder="e.g. 1")
@@ -380,7 +429,7 @@ class GambleChancesModal(discord.ui.Modal, title=MESSAGES["gam_modal_chance_titl
                 return await interaction.response.send_message("❌ ผลรวมต้องเท่ากับ 100%", ephemeral=True)
             setup_cache[self.user_id]["chances"] = chances
             await interaction.response.send_message("✅ บันทึกโอกาสแล้ว", ephemeral=True)
-        except: await interaction.response.send_message("❌ กรอกตัวเลขเท่านั้น", ephemeral=True)
+        except: await interaction.response.send_message(MESSAGES["msg_error_num"], ephemeral=True)
 
 class GambleImagesModal(discord.ui.Modal, title=MESSAGES["gam_modal_img_title"]):
     i1 = discord.ui.TextInput(label=MESSAGES["gam_lbl_i1"])
@@ -613,15 +662,8 @@ class AdminGivePointModal(discord.ui.Modal, title=MESSAGES["top_modal_give_title
         except ValueError: await interaction.response.send_message(MESSAGES["msg_error_num"], ephemeral=True)
 
 # =========================================
-# EXISTING COMMANDS (Admin, Auction, Ticket)
-# ... [Paste everything else from the previous main.py here] ...
+# SYSTEM COMMANDS
 # =========================================
-
-# (เพื่อให้โค้ดไม่ยาวเกินไป ผมจะใส่ส่วนเดิมกลับมาให้ครบถ้วนในบล็อกเดียวครับ)
-# Copy & Paste ส่วน Admin/Auction/Ticket จากโค้ดก่อนหน้าลงตรงนี้ได้เลยครับ 
-# แต่เพื่อความสะดวก ผมจะรวมให้หมดเลยด้านล่างนี้ครับ
-
-# ... [Admin/System Commands from previous code] ...
 @bot.event
 async def on_ready():
     await bot.tree.sync()
@@ -678,15 +720,17 @@ async def resetdata(interaction: discord.Interaction):
     save_data(data)
     await interaction.response.send_message(MESSAGES["sys_reset_done"], ephemeral=True)
 
-# ... [AUCTION & TICKET CODE - เหมือนเดิมทุกประการจากข้อความก่อนหน้า แต่ย่อไว้เพื่อความกระชับของคำตอบ ถ้าต้องการให้แปะซ้ำบอกได้ครับ] ...
-# เพื่อให้โค้ดทำงานได้สมบูรณ์ ผมจะใส่ส่วน Auction/Ticket ที่ปรับแก้แล้วล่าสุด (ปุ่มเทา/Log Embed) ลงไปด้วยครับ
-
+# =========================================
+# AUCTION SYSTEM
+# =========================================
 @bot.tree.command(name="auction", description="เริ่มระบบประมูล")
 async def auction(interaction: discord.Interaction, category: discord.CategoryChannel, channel_send: discord.TextChannel, message: str, approval_channel: discord.TextChannel, role_ping: discord.Role, log_channel: discord.TextChannel = None, btn_text: str = None, img_link: str = None):
     if not is_admin_or_has_permission(interaction): return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
     await interaction.response.defer(ephemeral=True)
+    
     embed = discord.Embed(description=message, color=discord.Color.green())
     if img_link: embed.set_image(url=img_link)
+    
     label = btn_text if btn_text else MESSAGES["auc_btn_default"]
     view = StartAuctionView(category, approval_channel, role_ping, log_channel, label)
     await channel_send.send(embed=embed, view=view)
@@ -699,6 +743,7 @@ class StartAuctionView(discord.ui.View):
         button = discord.ui.Button(label=label, style=discord.ButtonStyle.green, custom_id="start_auction_btn")
         button.callback = self.start_callback
         self.add_item(button)
+
     async def start_callback(self, interaction: discord.Interaction):
         await interaction.response.send_modal(AuctionModalStep1(self.category, self.approval_channel, self.role_ping, self.log_channel))
 
@@ -707,12 +752,23 @@ class AuctionModalStep1(discord.ui.Modal, title=MESSAGES["auc_step1_title"]):
     bid_step = discord.ui.TextInput(label=MESSAGES["auc_lbl_step"], placeholder=MESSAGES["auc_ph_step"], required=True)
     close_price = discord.ui.TextInput(label=MESSAGES["auc_lbl_close"], placeholder=MESSAGES["auc_ph_close"], required=True)
     item_name = discord.ui.TextInput(label=MESSAGES["auc_lbl_item"], required=True)
+
     def __init__(self, category, approval_channel, role_ping, log_channel):
         super().__init__()
         self.category, self.approval_channel, self.role_ping, self.log_channel = category, approval_channel, role_ping, log_channel
+
     async def on_submit(self, interaction: discord.Interaction):
         try:
-            auction_data = {"start_price": int(self.start_price.value),"bid_step": int(self.bid_step.value),"close_price": int(self.close_price.value),"item_name": self.item_name.value,"category_id": self.category.id,"approval_id": self.approval_channel.id,"role_ping_id": self.role_ping.id,"log_id": self.log_channel.id if self.log_channel else None}
+            auction_data = {
+                "start_price": int(self.start_price.value),
+                "bid_step": int(self.bid_step.value),
+                "close_price": int(self.close_price.value),
+                "item_name": self.item_name.value,
+                "category_id": self.category.id,
+                "approval_id": self.approval_channel.id,
+                "role_ping_id": self.role_ping.id,
+                "log_id": self.log_channel.id if self.log_channel else None
+            }
             view = Step2View(auction_data)
             await interaction.response.send_message(MESSAGES["auc_prompt_step2"], view=view, ephemeral=True)
         except ValueError: await interaction.response.send_message(MESSAGES["auc_err_num"], ephemeral=True)
@@ -730,19 +786,32 @@ class AuctionModalStep2(discord.ui.Modal, title=MESSAGES["auc_step2_title"]):
     rights = discord.ui.TextInput(label=MESSAGES["auc_lbl_rights"], placeholder=MESSAGES["auc_ph_rights"], required=True)
     extra_info = discord.ui.TextInput(label=MESSAGES["auc_lbl_extra"], placeholder=MESSAGES["auc_ph_extra"], required=False)
     end_time_str = discord.ui.TextInput(label=MESSAGES["auc_lbl_time"], placeholder=MESSAGES["auc_ph_time"], required=True)
+
     def __init__(self, auction_data):
         super().__init__()
         self.auction_data = auction_data
+
     async def on_submit(self, interaction: discord.Interaction):
         try:
             h, m = map(int, self.end_time_str.value.split(':'))
             total_minutes = (h * 60) + m
             if total_minutes <= 0: raise ValueError
-            self.auction_data.update({"download_link": self.download_link.value, "rights": self.rights.value,"extra_info": self.extra_info.value if self.extra_info.value else "-","duration_minutes": total_minutes, "seller_id": interaction.user.id})
-            overwrites = {interaction.guild.default_role: discord.PermissionOverwrite(read_messages=False),interaction.user: discord.PermissionOverwrite(read_messages=True),interaction.guild.me: discord.PermissionOverwrite(read_messages=True)}
+            
+            self.auction_data.update({
+                "download_link": self.download_link.value, "rights": self.rights.value,
+                "extra_info": self.extra_info.value if self.extra_info.value else "-",
+                "duration_minutes": total_minutes, "seller_id": interaction.user.id
+            })
+            
+            overwrites = {
+                interaction.guild.default_role: discord.PermissionOverwrite(read_messages=False),
+                interaction.user: discord.PermissionOverwrite(read_messages=True),
+                interaction.guild.me: discord.PermissionOverwrite(read_messages=True)
+            }
             for admin_id in data["admins"]:
                 member = interaction.guild.get_member(admin_id)
                 if member: overwrites[member] = discord.PermissionOverwrite(read_messages=True)
+            
             channel = await interaction.guild.create_text_channel(f"✧꒰ส่งรูปสินค้า📦-{interaction.user.name}꒱", overwrites=overwrites)
             await interaction.response.send_message(MESSAGES["auc_created_channel"].format(channel=channel.mention), ephemeral=True)
             bot.loop.create_task(self.wait_for_images(channel, interaction.user, self.auction_data))
@@ -754,10 +823,13 @@ class AuctionModalStep2(discord.ui.Modal, title=MESSAGES["auc_step2_title"]):
             await channel.send(MESSAGES["auc_wait_img_1"].format(user=user.mention), delete_after=300)
             msg1 = await bot.wait_for('message', check=check, timeout=300)
             auction_data["img_product_urls"] = [att.url for att in msg1.attachments]
+
             await channel.send(MESSAGES["auc_wait_img_2"])
             msg2 = await bot.wait_for('message', check=check, timeout=300)
             auction_data["img_qr_url"] = msg2.attachments[0].url
+
             await channel.send(MESSAGES["auc_img_received"])
+
             approval_channel = bot.get_channel(auction_data["approval_id"])
             if approval_channel:
                 base_embed = discord.Embed(title=MESSAGES["auc_embed_request_title"], color=discord.Color.gold())
@@ -771,6 +843,7 @@ class AuctionModalStep2(discord.ui.Modal, title=MESSAGES["auc_step2_title"]):
                 base_embed.add_field(name="ลิ้งค์สินค้า", value=f"{auction_data['download_link']}", inline=False)
                 base_embed.add_field(name="เพิ่มเติม", value=f"{auction_data['extra_info']}", inline=False)
                 base_embed.set_thumbnail(url=auction_data['img_qr_url'])
+                
                 files_to_send = await get_files_from_urls(auction_data["img_product_urls"])
                 view = ApprovalView(auction_data, channel)
                 await approval_channel.send(embed=base_embed, files=files_to_send, view=view)
@@ -780,18 +853,24 @@ class ApprovalView(discord.ui.View):
     def __init__(self, auction_data, temp_channel):
         super().__init__(timeout=None)
         self.auction_data, self.temp_channel = auction_data, temp_channel
+
     @discord.ui.button(label=MESSAGES["auc_btn_approve"], style=discord.ButtonStyle.green)
     async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         if self.temp_channel: await self.temp_channel.delete()
+        
         category = interaction.guild.get_channel(self.auction_data["category_id"])
         data["auction_count"] += 1
         save_data(data)
+        
         auction_channel = await interaction.guild.create_text_channel(f"ประมูลครั้งที่-{data['auction_count']}-ราคา-{self.auction_data['start_price']}", category=category)
+        
         ping_role = interaction.guild.get_role(self.auction_data["role_ping_id"])
         if ping_role: await auction_channel.send(ping_role.mention, delete_after=5)
+
         end_time = datetime.datetime.now() + datetime.timedelta(minutes=self.auction_data["duration_minutes"])
         timestamp = int(end_time.timestamp())
+
         main_embed = discord.Embed(description=MESSAGES["auc_embed_title"], color=discord.Color.purple())
         main_embed.add_field(name="ᯓ★ โดย", value=f"<@{self.auction_data['seller_id']}>", inline=False)
         main_embed.add_field(name="ᯓ★ ราคาเริ่มต้น", value=f"{self.auction_data['start_price']}", inline=True)
@@ -801,15 +880,24 @@ class ApprovalView(discord.ui.View):
         main_embed.add_field(name="ᯓ★ สิทธิ์", value=f"{self.auction_data['rights']}", inline=True)
         main_embed.add_field(name="ᯓ★ เพิ่มเติม", value=f"{self.auction_data['extra_info']}", inline=False)
         main_embed.add_field(name="-ˋˏ✄┈┈┈┈", value=f"**เวลาปิดประมูล : <t:{timestamp}:R>**", inline=False)
+        
         files_to_send = await get_files_from_urls(self.auction_data["img_product_urls"])
+        
         view = AuctionControlView(self.auction_data['seller_id'])
         msg = await auction_channel.send(embed=main_embed, view=view)
-        if files_to_send: await auction_channel.send(files=files_to_send)
-        self.auction_data.update({'channel_id': auction_channel.id, 'current_price': self.auction_data['start_price'],'end_time': end_time, 'winner_id': None, 'message_id': msg.id, 'active': True, 'last_bid_msg_id': None})
+        if files_to_send:
+            await auction_channel.send(files=files_to_send)
+
+        self.auction_data.update({
+            'channel_id': auction_channel.id, 'current_price': self.auction_data['start_price'],
+            'end_time': end_time, 'winner_id': None, 'message_id': msg.id, 'active': True, 'last_bid_msg_id': None
+        })
         active_auctions[auction_channel.id] = self.auction_data
         bot.loop.create_task(auction_countdown(auction_channel.id))
+        
         await interaction.followup.send(MESSAGES["auc_admin_approve_log"].format(channel=auction_channel.mention))
         self.stop()
+
     @discord.ui.button(label=MESSAGES["auc_btn_deny"], style=discord.ButtonStyle.red)
     async def deny(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(DenyModal(self.auction_data, self.temp_channel))
@@ -829,6 +917,7 @@ class DenyModal(discord.ui.Modal, title=MESSAGES["auc_modal_deny_title"]):
             embed.add_field(name="📝 เหตุผล", value=self.reason.value, inline=False)
             embed.timestamp = datetime.datetime.now()
             await log_chan.send(embed=embed)
+
         await interaction.response.send_message(MESSAGES["auc_deny_msg"], ephemeral=True)
 
 class AuctionControlView(discord.ui.View):
@@ -841,10 +930,12 @@ class AuctionControlView(discord.ui.View):
             if interaction.channel_id in active_auctions:
                 active_auctions[interaction.channel_id]['end_time'] = datetime.datetime.now()
                 await interaction.response.send_message(MESSAGES["auc_closing"], ephemeral=True)
-            else: await interaction.response.send_message(MESSAGES["auc_no_data"], ephemeral=True)
+            else:
+                 await interaction.response.send_message(MESSAGES["auc_no_data"], ephemeral=True)
         else: await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
 
 active_auctions = {} 
+
 async def auction_countdown(channel_id):
     while channel_id in active_auctions:
         data = active_auctions[channel_id]
@@ -860,28 +951,47 @@ async def end_auction_logic(channel_id):
     auction_data['active'] = False
     channel = bot.get_channel(channel_id)
     if not channel: return
+
     winner_id, seller_id = auction_data['winner_id'], auction_data['seller_id']
+    seller_mention = f"<@{seller_id}>"
+    
     if winner_id is None:
         if auction_data['log_id']:
             log = bot.get_channel(auction_data['log_id'])
-            embed = discord.Embed(description=MESSAGES["auc_end_no_bid"].format(count=data['auction_count'], seller=f"<@{seller_id}>"), color=discord.Color.yellow())
+            embed = discord.Embed(description=MESSAGES["auc_end_no_bid"].format(count=data['auction_count'], seller=seller_mention), color=discord.Color.yellow())
             await log.send(embed=embed)
         await channel.delete()
         del active_auctions[channel_id]
         return
+
     winner_mention = f"<@{winner_id}>"
+    # Send Winner Announcement and capture the message
     winner_msg = await channel.send(MESSAGES["auc_end_winner"].format(winner=winner_mention, count=data['auction_count'], price=auction_data['current_price'], time=data['lockdown_time']))
+    
     await asyncio.sleep(data['lockdown_time'])
-    overwrites = {channel.guild.default_role: discord.PermissionOverwrite(read_messages=False),channel.guild.get_member(seller_id): discord.PermissionOverwrite(read_messages=True, send_messages=True),channel.guild.get_member(winner_id): discord.PermissionOverwrite(read_messages=True, send_messages=True),channel.guild.me: discord.PermissionOverwrite(read_messages=True)}
+
+    overwrites = {
+        channel.guild.default_role: discord.PermissionOverwrite(read_messages=False),
+        channel.guild.get_member(seller_id): discord.PermissionOverwrite(read_messages=True, send_messages=True),
+        channel.guild.get_member(winner_id): discord.PermissionOverwrite(read_messages=True, send_messages=True),
+        channel.guild.me: discord.PermissionOverwrite(read_messages=True)
+    }
     for admin_id in data["admins"]:
         mem = channel.guild.get_member(admin_id)
         if mem: overwrites[mem] = discord.PermissionOverwrite(read_messages=True)
+    
     await channel.edit(overwrites=overwrites)
+    
+    # Clean up clutter messages
     try: await winner_msg.delete()
     except: pass
+    
     if auction_data.get('last_bid_msg_id'):
-        try: await (await channel.fetch_message(auction_data['last_bid_msg_id'])).delete()
+        try:
+            last_bid_msg = await channel.fetch_message(auction_data['last_bid_msg_id'])
+            await last_bid_msg.delete()
         except: pass
+
     embed = discord.Embed(description=MESSAGES["auc_lock_msg"].format(winner=winner_mention), color=discord.Color.green())
     embed.add_field(name="ปุ่มสำหรับผู้เปิดประมูล", value="ด้านล่าง")
     embed.set_image(url=auction_data['img_qr_url'])
@@ -914,6 +1024,7 @@ class ConfirmFinalView(discord.ui.View):
             await winner.send(MESSAGES["auc_dm_content"].format(link=self.auction_data['download_link']))
             dm_msg = MESSAGES["auc_dm_success"]
         except: dm_msg = MESSAGES["auc_dm_fail"].format(user=f"<@{self.auction_data['winner_id']}>")
+
         await interaction.followup.send(f"{dm_msg}\nลบช่องใน 1 นาที...", ephemeral=True)
         if self.auction_data['log_id']:
             log = bot.get_channel(self.auction_data['log_id'])
@@ -948,16 +1059,20 @@ async def on_message(message):
         if match:
             amount = int(match.group(1))
             if amount < auction_data['current_price'] + auction_data['bid_step']: return
+            
             old_winner = auction_data['winner_id']
             auction_data['current_price'], auction_data['winner_id'] = amount, message.author.id
+            
             response_text = MESSAGES["auc_bid_response"].format(user=message.author.mention, amount=amount)
             if old_winner and old_winner != message.author.id: response_text += MESSAGES["auc_bid_outbid"].format(old_winner=f"<@{old_winner}>")
             if amount >= auction_data['close_price']:
                  response_text += MESSAGES["auc_bid_autobuy"]
                  auction_data['end_time'] = datetime.datetime.now() + datetime.timedelta(minutes=10)
+            
             if auction_data.get('last_bid_msg_id'):
                 try: await (await message.channel.fetch_message(auction_data['last_bid_msg_id'])).delete()
                 except: pass
+            
             sent_msg = await message.reply(response_text)
             auction_data['last_bid_msg_id'] = sent_msg.id
             if (datetime.datetime.now().timestamp() - auction_data.get('last_rename', 0)) > 30:
@@ -986,24 +1101,44 @@ async def on_thread_create(thread):
 class TicketForumView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
+    
     @discord.ui.button(label=MESSAGES["tf_btn_buy"], style=discord.ButtonStyle.green, custom_id="tf_buy")
     async def buy(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id == interaction.channel.owner_id: return await interaction.response.send_message(MESSAGES["tf_err_own_post"], ephemeral=True)
+        if interaction.user.id == interaction.channel.owner_id:
+             return await interaction.response.send_message(MESSAGES["tf_err_own_post"], ephemeral=True)
+             
         conf = data["ticket_configs"].get(str(interaction.channel.parent_id))
         if not conf: return
+
         button.disabled = True
         button.label = MESSAGES["tf_btn_buying"]
         button.style = discord.ButtonStyle.gray
         await interaction.response.edit_message(view=self)
+
         data["ticket_count"] += 1
         save_data(data)
+        
         category = interaction.guild.get_channel(conf["category_id"])
-        overwrites = {interaction.guild.default_role: discord.PermissionOverwrite(read_messages=False),interaction.user: discord.PermissionOverwrite(read_messages=True),interaction.channel.owner: discord.PermissionOverwrite(read_messages=True),interaction.guild.me: discord.PermissionOverwrite(read_messages=True)}
+        overwrites = {
+            interaction.guild.default_role: discord.PermissionOverwrite(read_messages=False),
+            interaction.user: discord.PermissionOverwrite(read_messages=True),
+            interaction.channel.owner: discord.PermissionOverwrite(read_messages=True),
+            interaction.guild.me: discord.PermissionOverwrite(read_messages=True)
+        }
         chan_name = f"ID-{data['ticket_count']}"
         ticket_chan = await interaction.guild.create_text_channel(chan_name, category=category, overwrites=overwrites)
+        
         msg = MESSAGES["tf_room_created"].format(buyer=interaction.user.mention, seller=interaction.channel.owner.mention)
-        view = TicketControlView(interaction.channel.id, conf["log_id"], interaction.user.id, interaction.channel.owner_id, interaction.message.id)
+        
+        view = TicketControlView(
+            interaction.channel.id, 
+            conf["log_id"], 
+            interaction.user.id, 
+            interaction.channel.owner_id,
+            interaction.message.id 
+        )
         await ticket_chan.send(msg, view=view)
+
     @discord.ui.button(label=MESSAGES["tf_btn_report"], style=discord.ButtonStyle.red, custom_id="tf_report")
     async def report(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id == interaction.channel.owner_id: return await interaction.response.send_message(MESSAGES["tf_err_own_report"], ephemeral=True)
@@ -1024,47 +1159,71 @@ class ReportModal(discord.ui.Modal, title=MESSAGES["tf_modal_report_title"]):
             embed.add_field(name="📝 เหตุผล", value=self.reason.value, inline=False)
             embed.timestamp = datetime.datetime.now()
             await log.send(embed=embed)
+            
         await interaction.response.send_message(MESSAGES["msg_report_success"], ephemeral=True)
 
 class TicketControlView(discord.ui.View):
     def __init__(self, forum_thread_id, log_id, buyer_id, seller_id, forum_msg_id):
         super().__init__(timeout=None)
-        self.forum_thread_id, self.log_id, self.buyer_id, self.seller_id, self.forum_msg_id = forum_thread_id, log_id, buyer_id, seller_id, forum_msg_id
+        self.forum_thread_id = forum_thread_id
+        self.log_id = log_id
+        self.buyer_id = buyer_id
+        self.seller_id = seller_id
+        self.forum_msg_id = forum_msg_id
+
     @discord.ui.button(label=MESSAGES["tf_btn_finish"], style=discord.ButtonStyle.green)
     async def finish(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.seller_id: return await interaction.response.send_message(MESSAGES["tf_only_seller"], ephemeral=True)
+        if interaction.user.id != self.seller_id:
+             return await interaction.response.send_message(MESSAGES["tf_only_seller"], ephemeral=True)
+
         msg = MESSAGES["tf_wait_admin"]
         for sid in data["supports"]: msg += f" <@{sid}>"
         await interaction.channel.send(msg)
         await interaction.channel.send(MESSAGES["tf_admin_panel_msg"], view=AdminCloseView(self.forum_thread_id, self.log_id, self.buyer_id, self.seller_id))
         await interaction.response.defer()
+
     @discord.ui.button(label=MESSAGES["tf_btn_cancel"], style=discord.ButtonStyle.red)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.seller_id: return await interaction.response.send_message(MESSAGES["tf_only_seller"], ephemeral=True)
+        if interaction.user.id != self.seller_id:
+             return await interaction.response.send_message(MESSAGES["tf_only_seller"], ephemeral=True)
+             
         await interaction.response.send_modal(TicketCancelModal(self.log_id, self.buyer_id, self.seller_id, self.forum_thread_id, self.forum_msg_id))
 
 class TicketCancelModal(discord.ui.Modal, title=MESSAGES["tf_modal_cancel_title"]):
     reason = discord.ui.TextInput(label=MESSAGES["tf_lbl_reason"], required=True)
     def __init__(self, log_id, buyer_id, seller_id, forum_thread_id, forum_msg_id):
         super().__init__()
-        self.log_id, self.buyer_id, self.seller_id, self.forum_thread_id, self.forum_msg_id = log_id, buyer_id, seller_id, forum_thread_id, forum_msg_id
+        self.log_id = log_id
+        self.buyer_id = buyer_id
+        self.seller_id = seller_id
+        self.forum_thread_id = forum_thread_id
+        self.forum_msg_id = forum_msg_id
+        
     async def on_submit(self, interaction: discord.Interaction):
         if self.log_id:
             log_chan = bot.get_channel(self.log_id)
             if log_chan:
-                embed = discord.Embed(title=MESSAGES["tf_log_cancel_title"], description=MESSAGES["tf_log_cancel_desc"].format(count=data['ticket_count']), color=discord.Color.red())
+                embed = discord.Embed(
+                    title=MESSAGES["tf_log_cancel_title"],
+                    description=MESSAGES["tf_log_cancel_desc"].format(count=data['ticket_count']),
+                    color=discord.Color.red()
+                )
                 embed.add_field(name="🪧 ผู้ขาย", value=f"<@{self.seller_id}>", inline=True)
                 embed.add_field(name="👤 ผู้ซื้อ", value=f"<@{self.buyer_id}>", inline=True)
                 embed.add_field(name="🚫 ยกเลิกโดย", value=interaction.user.mention, inline=True)
                 embed.add_field(name="📝 เหตุผล", value=self.reason.value, inline=False)
                 embed.timestamp = datetime.datetime.now()
                 await log_chan.send(embed=embed)
+        
         try:
             forum_thread = bot.get_channel(self.forum_thread_id)
             if forum_thread:
                 msg = await forum_thread.fetch_message(self.forum_msg_id)
-                if msg: await msg.edit(view=TicketForumView())
-        except: pass
+                if msg:
+                    await msg.edit(view=TicketForumView())
+        except:
+            pass 
+
         await interaction.response.send_message(f"ยกเลิกโดย {interaction.user.mention}\nเหตุผล: {self.reason.value}")
         await asyncio.sleep(5)
         await interaction.channel.delete()
@@ -1072,20 +1231,30 @@ class TicketCancelModal(discord.ui.Modal, title=MESSAGES["tf_modal_cancel_title"
 class AdminCloseView(discord.ui.View):
     def __init__(self, forum_thread_id, log_id, buyer_id, seller_id):
         super().__init__(timeout=None)
-        self.forum_thread_id, self.log_id, self.buyer_id, self.seller_id = forum_thread_id, log_id, buyer_id, seller_id
+        self.forum_thread_id = forum_thread_id
+        self.log_id = log_id
+        self.buyer_id = buyer_id
+        self.seller_id = seller_id
+
     @discord.ui.button(label=MESSAGES["tf_btn_admin_close"], style=discord.ButtonStyle.danger)
     async def close_all(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not is_support_or_admin(interaction): return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
         await interaction.response.send_message(MESSAGES["processing"], ephemeral=True)
+        
         if self.log_id:
             log_chan = bot.get_channel(self.log_id)
             if log_chan:
-                embed = discord.Embed(title=MESSAGES["tf_log_success_title"], description=MESSAGES["tf_log_success_desc"].format(count=data["ticket_count"]), color=discord.Color.green())
+                embed = discord.Embed(
+                    title=MESSAGES["tf_log_success_title"],
+                    description=MESSAGES["tf_log_success_desc"].format(count=data["ticket_count"]),
+                    color=discord.Color.green()
+                )
                 embed.add_field(name="🪧 ผู้ขาย", value=f"<@{self.seller_id}>", inline=True)
                 embed.add_field(name="👤 ผู้ซื้อ", value=f"<@{self.buyer_id}>", inline=True)
                 embed.add_field(name="🔒 ปิดช่องโดย", value=interaction.user.mention, inline=False)
                 embed.timestamp = datetime.datetime.now()
                 await log_chan.send(embed=embed)
+
         try: await interaction.channel.delete()
         except: pass
         try:
