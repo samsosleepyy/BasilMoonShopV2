@@ -1,11 +1,9 @@
-# main.py
 import discord
 from discord.ext import commands
 import os
 import asyncio
 from keep_alive import keep_alive
 
-# ตั้งค่า Intent
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
@@ -15,13 +13,12 @@ class MyBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents, help_command=None)
 
     async def setup_hook(self):
-        # โหลดไฟล์ทั้งหมดในโฟลเดอร์ cogs
+        # Load all cogs
         for filename in os.listdir('./cogs'):
             if filename.endswith('.py'):
                 await self.load_extension(f'cogs.{filename[:-3]}')
-        
         await self.tree.sync()
-        print("Commands synced!")
+        print("Commands synced! Cogs loaded.")
 
 bot = MyBot()
 
