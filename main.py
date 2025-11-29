@@ -80,8 +80,8 @@ MESSAGES = {
 
     # --- Gamble User ---
     "gam_select_topup": "เติม Point (Top-up)",
-    "gam_opt_tm": "TrueMoney Wallet (ซอง)",
-    "gam_opt_pp": "PromptPay (โอนสลิป)",
+    "gam_opt_tm": "TrueMoney Wallet",
+    "gam_opt_pp": "PromptPay",
     
     "top_tm_modal_title": "เติมเงิน TrueMoney (ซอง)",
     "top_tm_lbl_link": "ลิ้งค์ซองอั่งเปา",
@@ -481,7 +481,6 @@ class GamblePaymentModal(discord.ui.Modal, title=MESSAGES["gam_modal_pay_title"]
             "pay_qr": self.qr.value
         })
         
-        # [FIX] Convert AppCommandChannel to TextChannel
         raw_channel = cache["target_channel"]
         target_channel = interaction.guild.get_channel(raw_channel.id)
         if not target_channel:
@@ -501,17 +500,42 @@ class GamblePaymentModal(discord.ui.Modal, title=MESSAGES["gam_modal_pay_title"]
         del setup_cache[self.user_id]
 
 # =========================================
-# GAMBLE FRONT-END
+# GAMBLE FRONT-END (REVISED: BUTTONS ONLY)
 # =========================================
 class GambleMainView(discord.ui.View):
     def __init__(self, config):
         super().__init__(timeout=None)
         self.config = config
         
-        gacha_btn = discord.ui.Button(label=config["btn_text"], style=discord.ButtonStyle.primary, custom_id="gacha_play")
+        # 1. Gacha Button (Green)
+        gacha_btn = discord.ui.Button(
+            label=config["btn_text"], 
+            style=discord.ButtonStyle.green, 
+            custom_id="gacha_play",
+            emoji="🎰"
+        )
         gacha_btn.callback = self.play_gacha
         self.add_item(gacha_btn)
-        self.add_item(TopUpSelect(config))
+
+        # 2. TrueMoney (Red)
+        tm_btn = discord.ui.Button(
+            label=MESSAGES["gam_opt_tm"], 
+            style=discord.ButtonStyle.red,
+            custom_id="topup_tm",
+            emoji="🧧"
+        )
+        tm_btn.callback = self.topup_tm
+        self.add_item(tm_btn)
+
+        # 3. PromptPay (Blue)
+        pp_btn = discord.ui.Button(
+            label=MESSAGES["gam_opt_pp"], 
+            style=discord.ButtonStyle.blurple,
+            custom_id="topup_pp",
+            emoji="🏦"
+        )
+        pp_btn.callback = self.topup_pp
+        self.add_item(pp_btn)
 
     async def play_gacha(self, interaction: discord.Interaction):
         user_id = str(interaction.user.id)
@@ -550,23 +574,14 @@ class GambleMainView(discord.ui.View):
         embed_res.set_footer(text=MESSAGES["point_balance"].format(points=data["points"][user_id]))
         await interaction.edit_original_response(embed=embed_res)
 
-class TopUpSelect(discord.ui.Select):
-    def __init__(self, config):
-        self.config = config
-        options = [
-            discord.SelectOption(label=MESSAGES["gam_opt_tm"], value="tm", emoji="🧧"),
-            discord.SelectOption(label=MESSAGES["gam_opt_pp"], value="pp", emoji="🏦")
-        ]
-        super().__init__(placeholder=MESSAGES["gam_select_topup"], options=options, custom_id="topup_select")
+    async def topup_tm(self, interaction: discord.Interaction):
+        await interaction.response.send_modal(TopUpTMModal(self.config))
 
-    async def callback(self, interaction: discord.Interaction):
-        if self.values[0] == "tm":
-            await interaction.response.send_modal(TopUpTMModal(self.config))
-        elif self.values[0] == "pp":
-            embed = discord.Embed(description=self.config["pay_pp"], color=discord.Color.blue())
-            embed.set_image(url=self.config["pay_qr"])
-            view = PromptPayConfirmView(self.config)
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+    async def topup_pp(self, interaction: discord.Interaction):
+        embed = discord.Embed(description=self.config["pay_pp"], color=discord.Color.blue())
+        embed.set_image(url=self.config["pay_qr"])
+        view = PromptPayConfirmView(self.config)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 class TopUpTMModal(discord.ui.Modal, title=MESSAGES["top_tm_modal_title"]):
     link = discord.ui.TextInput(label=MESSAGES["top_tm_lbl_link"])
@@ -574,7 +589,6 @@ class TopUpTMModal(discord.ui.Modal, title=MESSAGES["top_tm_modal_title"]):
         super().__init__()
         self.config = config
     async def on_submit(self, interaction: discord.Interaction):
-        # [FIX] Fetch Log Channel
         log_id = self.config["log_channel"].id
         log_channel = interaction.guild.get_channel(log_id)
         if log_channel:
@@ -607,7 +621,6 @@ class PromptPayConfirmView(discord.ui.View):
             slip_url = msg.attachments[0].url
             await channel.send(MESSAGES["top_slip_received"])
             
-            # [FIX] Fetch Log Channel
             log_id = self.config["log_channel"].id
             log_channel = interaction.guild.get_channel(log_id)
             if log_channel:
