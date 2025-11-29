@@ -221,4 +221,6 @@ async def get_files_from_urls(urls):
                 async with session.get(url) as resp:
                     if resp.status == 200:
                         data = await resp.read()
-                        files.append(discord.File(io.BytesIO(data
+                        files.append(discord.File(io.BytesIO(data), filename=f"image_{i}.png"))
+            except: pass
+    return files
