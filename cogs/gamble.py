@@ -5,10 +5,9 @@ import sys
 import os
 import random
 import asyncio
-import uuid
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import MESSAGES, load_data, save_data, is_admin_or_has_permission, get_files_from_urls
-from utils import TrueMoneyGift, KBankPromptPay
+from utils import TrueMoneyGift
 
 setup_cache = {}
 
@@ -274,7 +273,10 @@ class GambleMainView(discord.ui.View):
         await interaction.response.send_modal(TopUpTMModal(self.config))
 
     async def topup_pp(self, interaction: discord.Interaction):
-        await interaction.response.send_modal(TopUpPPModal(self.config))
+        embed = discord.Embed(description=self.config["pay_pp"], color=discord.Color.blue())
+        embed.set_image(url=self.config["pay_qr"])
+        view = PromptPayConfirmView(self.config)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 class TopUpTMModal(discord.ui.Modal, title=MESSAGES["top_tm_modal_title"]):
     link = discord.ui.TextInput(label=MESSAGES["top_tm_lbl_link"])
@@ -308,46 +310,10 @@ class TopUpTMModal(discord.ui.Modal, title=MESSAGES["top_tm_modal_title"]):
                 await log_channel.send(embed=log_embed)
         else: await interaction.followup.send(MESSAGES["tm_err_generic"].format(error=result["message"]), ephemeral=True)
 
-# [NEW] Modal for PromptPay Amount
-class TopUpPPModal(discord.ui.Modal, title=MESSAGES["top_pp_modal_title"]):
-    amount = discord.ui.TextInput(label=MESSAGES["top_pp_lbl_amount"], placeholder="เช่น 50")
-    
-    def __init__(self, config):
-        super().__init__()
-        self.config = config
-
-    async def on_submit(self, interaction: discord.Interaction):
-        try:
-            amt = float(self.amount.value)
-            if amt <= 0: raise ValueError
-        except: return await interaction.response.send_message(MESSAGES["msg_error_num"], ephemeral=True)
-
-        await interaction.response.defer(ephemeral=True)
-        
-        # Generate QR via KBank
-        kbank = KBankPromptPay()
-        ref_id = str(uuid.uuid4())[:15]
-        qr_text = await kbank.create_qr(amt, ref_id)
-        
-        view = PromptPayConfirmView(self.config, amt)
-        
-        if qr_text:
-            qr_file = kbank.text_to_qr_image(qr_text)
-            embed = discord.Embed(description=MESSAGES["top_pp_msg_api"].format(amount=amt, ref=ref_id), color=discord.Color.blue())
-            embed.set_image(url="attachment://kbank_qr.png")
-            await interaction.followup.send(embed=embed, file=qr_file, view=view, ephemeral=True)
-        else:
-            # Fallback to static QR
-            embed = discord.Embed(description=MESSAGES["top_pp_msg_manual"].format(amount=amt), color=discord.Color.blue())
-            embed.set_image(url=self.config["pay_qr"])
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-
 class PromptPayConfirmView(discord.ui.View):
-    def __init__(self, config, amount):
+    def __init__(self, config):
         super().__init__(timeout=None)
         self.config = config
-        self.amount = amount # Keep track for log
-
     @discord.ui.button(label=MESSAGES["top_pp_btn_confirm"], style=discord.ButtonStyle.green)
     async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
         data = load_data()
@@ -367,7 +333,7 @@ class PromptPayConfirmView(discord.ui.View):
             log_id = self.config["log_channel"].id
             log_channel = interaction.guild.get_channel(log_id)
             if log_channel:
-                embed = discord.Embed(description=MESSAGES["top_slip_log_embed"].format(user=interaction.user.mention, amount=self.amount), color=discord.Color.orange())
+                embed = discord.Embed(description=MESSAGES["top_slip_log_embed"].format(user=interaction.user.mention), color=discord.Color.orange())
                 embed.set_image(url=slip_url)
                 view = AdminSlipCheckView(interaction.user.id, channel.id)
                 await log_channel.send(embed=embed, view=view)
