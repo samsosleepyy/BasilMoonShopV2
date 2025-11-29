@@ -11,7 +11,7 @@ import io
 from keep_alive import keep_alive
 
 # =========================================
-# 📝 CONFIGURATION & TEXT MESSAGES (แก้ไขข้อความตรงนี้)
+# 📝 CONFIGURATION & TEXT MESSAGES
 # =========================================
 MESSAGES = {
     # --- ข้อความระบบทั่วไป ---
@@ -19,7 +19,7 @@ MESSAGES = {
     "cmd_success": "✅ ดำเนินการเรียบร้อย",
     "loading": "⏳ กำลังประมวลผล...",
     
-    # --- ข้อความ Auction (เริ่มประมูล) ---
+    # --- ข้อความ Auction ---
     "auc_btn_default": "💳 เปิดการประมูล",
     "auc_step1_title": "📝 ข้อมูลการประมูล (1/2)",
     "auc_step2_title": "📝 ข้อมูลการประมูล (2/2)",
@@ -27,15 +27,11 @@ MESSAGES = {
     "auc_wait_img_1": "{user} 📦 ส่งรูปสินค้าของคุณที่ช่องนี้\n-# **สามารถส่งได้หลายรูปใน 1 ข้อความ** เพื่อให้แสดงเป็นอัลบั้มรวม",
     "auc_wait_img_2": "🧾 โปรดส่งรูป QR code หรือช่องทางการชำระเงิน\n-# ข้อมูลตรงนี้จะไม่มีการเผยแพร่",
     "auc_img_received": "📥 ได้รับรูปสินค้าเรียบร้อย รอแอดมินยืนยัน ⏳",
-    
-    # --- ข้อความ Auction (อนุมัติ/แสดงผล) ---
     "auc_embed_title": "# ˚₊‧꒰ა ☆ ໒꒱ ‧₊˚\n*🔥 เปิดประมูล!*",
     "auc_admin_approve_log": "✅ อนุมัติการประมูล สร้างห้องที่ {channel}",
     "auc_admin_deny_reason": "เหตุผลการไม่อนุมัติ",
     "auc_deny_msg": "❌ ปฏิเสธการประมูลแล้ว",
     "auc_deny_log": "🚫 **ไม่อนุมัติการประมูล**\n👤 ผู้ขาย: {seller}\n👮 โดยแอดมิน: {admin}\n📝 เหตุผล: {reason}",
-    
-    # --- ข้อความ Auction (จบ/ยกเลิก) ---
     "auc_end_winner": "🎉 **จบการประมูล!**\n📜 ครั้งที่ {count} | ผู้ชนะ: {winner}\n💰 จบที่ราคา: **{price} บาท**\n-# 🔐 ช่องนี้จะถูกล็อคใน {time} วินาที",
     "auc_end_no_bid": "⚠️ **การประมูลจบลง (ไม่มีผู้ประมูล)**\n📜 ครั้งที่ {count} | ผู้ขาย: {seller}",
     "auc_lock_msg": "🔐 **ช่องนี้เป็นส่วนตัวแล้ว**\n({winner} ผู้ชนะประมูล) สามารถชำระเงินได้เลยครับ",
@@ -47,6 +43,7 @@ MESSAGES = {
 
     # --- ข้อความ Ticket Forum ---
     "tf_btn_buy": "🛒 สั่งซื้อ (Tickets)",
+    "tf_btn_buying": "⏳ อยู่ในระหว่างการซื้อ", # ข้อความตอนปุ่มเทา
     "tf_btn_report": "🚩 รายงาน",
     "tf_err_own_post": "❌ คุณไม่สามารถสั่งซื้อสินค้าของตัวเองได้",
     "tf_err_own_report": "❌ คุณไม่สามารถรายงานโพสต์ของตัวเองได้",
@@ -534,14 +531,23 @@ async def on_thread_create(thread):
 class TicketForumView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
+    
     @discord.ui.button(label=MESSAGES["tf_btn_buy"], style=discord.ButtonStyle.green, custom_id="tf_buy")
     async def buy(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # ป้องกันเจ้าของโพสต์กดเอง
+        # 1. เช็คว่าเจ้าของกดเองไหม
         if interaction.user.id == interaction.channel.owner_id:
              return await interaction.response.send_message(MESSAGES["tf_err_own_post"], ephemeral=True)
              
         conf = data["ticket_configs"].get(str(interaction.channel.parent_id))
         if not conf: return
+
+        # 2. ปรับปุ่มเป็นสีเทา (Lock ปุ่ม)
+        button.disabled = True
+        button.label = MESSAGES["tf_btn_buying"]
+        button.style = discord.ButtonStyle.gray
+        await interaction.response.edit_message(view=self) # อัปเดตปุ่มทันที
+
+        # 3. สร้างห้อง Ticket
         data["ticket_count"] += 1
         save_data(data)
         
@@ -556,10 +562,16 @@ class TicketForumView(discord.ui.View):
         ticket_chan = await interaction.guild.create_text_channel(chan_name, category=category, overwrites=overwrites)
         
         msg = MESSAGES["tf_room_created"].format(buyer=interaction.user.mention, seller=interaction.channel.owner.mention)
-        # ส่ง log_id และ user id ไปด้วยเพื่อให้ View ขั้นตอนต่อไปใช้งานได้
-        view = TicketControlView(interaction.channel.id, conf["log_id"], interaction.user.id, interaction.channel.owner_id)
+        
+        # ส่ง msg_id ของโพสต์ใน forum ไปด้วย เพื่อให้เวลายกเลิกจะได้แก้ปุ่มคืนได้
+        view = TicketControlView(
+            interaction.channel.id, 
+            conf["log_id"], 
+            interaction.user.id, 
+            interaction.channel.owner_id,
+            interaction.message.id # ส่ง ID ข้อความที่มีปุ่ม
+        )
         await ticket_chan.send(msg, view=view)
-        await interaction.response.send_message(f"สร้างห้องแล้วที่ {ticket_chan.mention}", ephemeral=True)
 
     @discord.ui.button(label=MESSAGES["tf_btn_report"], style=discord.ButtonStyle.red, custom_id="tf_report")
     async def report(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -579,16 +591,16 @@ class ReportModal(discord.ui.Modal, title="รายงานโพสต์"):
         await interaction.response.send_message("ส่งรายงานเรียบร้อย", ephemeral=True)
 
 class TicketControlView(discord.ui.View):
-    def __init__(self, forum_thread_id, log_id, buyer_id, seller_id):
+    def __init__(self, forum_thread_id, log_id, buyer_id, seller_id, forum_msg_id):
         super().__init__(timeout=None)
         self.forum_thread_id = forum_thread_id
         self.log_id = log_id
         self.buyer_id = buyer_id
         self.seller_id = seller_id
+        self.forum_msg_id = forum_msg_id
 
     @discord.ui.button(label="เสร็จสิ้น(ปิดช่อง)", style=discord.ButtonStyle.green)
     async def finish(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # ⚠️ เช็คสิทธิ์: เฉพาะผู้ขาย (Seller) เท่านั้น
         if interaction.user.id != self.seller_id:
              return await interaction.response.send_message(MESSAGES["tf_only_seller"], ephemeral=True)
 
@@ -600,22 +612,23 @@ class TicketControlView(discord.ui.View):
 
     @discord.ui.button(label="ยกเลิก", style=discord.ButtonStyle.red)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # ⚠️ เช็คสิทธิ์: เฉพาะผู้ขาย (Seller) เท่านั้น
         if interaction.user.id != self.seller_id:
              return await interaction.response.send_message(MESSAGES["tf_only_seller"], ephemeral=True)
              
-        await interaction.response.send_modal(TicketCancelModal(self.log_id, self.buyer_id, self.seller_id))
+        await interaction.response.send_modal(TicketCancelModal(self.log_id, self.buyer_id, self.seller_id, self.forum_thread_id, self.forum_msg_id))
 
 class TicketCancelModal(discord.ui.Modal, title="เหตุผลการยกเลิก"):
     reason = discord.ui.TextInput(label="เหตุผล", required=True)
-    def __init__(self, log_id, buyer_id, seller_id):
+    def __init__(self, log_id, buyer_id, seller_id, forum_thread_id, forum_msg_id):
         super().__init__()
         self.log_id = log_id
         self.buyer_id = buyer_id
         self.seller_id = seller_id
+        self.forum_thread_id = forum_thread_id
+        self.forum_msg_id = forum_msg_id
         
     async def on_submit(self, interaction: discord.Interaction):
-        # ส่ง Log เมื่อกดยกเลิก (Embed สวยงาม)
+        # 1. ส่ง Log (Embed)
         if self.log_id:
             log_chan = bot.get_channel(self.log_id)
             if log_chan:
@@ -631,6 +644,17 @@ class TicketCancelModal(discord.ui.Modal, title="เหตุผลการย�
                 embed.timestamp = datetime.datetime.now()
                 await log_chan.send(embed=embed)
         
+        # 2. คืนค่าปุ่มใน Forum ให้เป็นสีเขียว
+        try:
+            forum_thread = bot.get_channel(self.forum_thread_id)
+            if forum_thread:
+                msg = await forum_thread.fetch_message(self.forum_msg_id)
+                if msg:
+                    # รีเซ็ต View เป็นแบบปกติ (ปุ่มเขียว)
+                    await msg.edit(view=TicketForumView())
+        except:
+            pass # กรณีหากระทู้ไม่เจอ หรือลบไปแล้วก็ช่างมัน
+
         await interaction.response.send_message(f"ยกเลิกโดย {interaction.user.mention}\nเหตุผล: {self.reason.value}")
         await asyncio.sleep(5)
         await interaction.channel.delete()
@@ -648,7 +672,7 @@ class AdminCloseView(discord.ui.View):
         if not is_support_or_admin(interaction): return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
         await interaction.response.send_message("กำลังดำเนินการ...", ephemeral=True)
         
-        # ส่ง Log สำเร็จ (Embed สวยงาม)
+        # ส่ง Log สำเร็จ (Embed)
         if self.log_id:
             log_chan = bot.get_channel(self.log_id)
             if log_chan:
