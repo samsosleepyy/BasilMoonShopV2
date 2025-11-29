@@ -11,7 +11,7 @@ class TicketSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="ticketf")
+    @app_commands.command(name="ticketf", description=MESSAGES["desc_ticketf"])
     async def ticketf(self, interaction: discord.Interaction, category: discord.CategoryChannel, forum: discord.ForumChannel, log_channel: discord.TextChannel = None):
         if not is_admin_or_has_permission(interaction): return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
         data = load_data()
