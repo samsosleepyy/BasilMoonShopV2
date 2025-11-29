@@ -6,6 +6,14 @@ import io
 
 DATA_FILE = "data.json"
 
+# --- การตั้งค่า KBank API ---
+KBANK_CONSUMER_KEY = "ใส่_Consumer_Key_ที่นี่"
+KBANK_CONSUMER_SECRET = "ใส่_Consumer_Secret_ที่นี่"
+KBANK_MERCHANT_ID = "ใส่_Merchant_ID_ที่นี่" # เช่น 123456789012345
+
+# URL ของ Sandbox (ถ้าใช้จริงต้องเปลี่ยนเป็น Production)
+KBANK_HOST = "https://openapi-sandbox.kasikornbank.com"
+
 # =========================================
 # 📝 ข้อความทั้งหมด (MESSAGES)
 # =========================================
