@@ -1,3 +1,5 @@
 discord.py
 flask
 aiohttp
+qrcode
+Pillow
