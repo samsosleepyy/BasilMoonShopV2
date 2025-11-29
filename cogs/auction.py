@@ -17,21 +17,17 @@ class AuctionSystem(commands.Cog):
 
     async def auction_loop(self):
         while True:
-            # Check active auctions every 5 seconds
             to_remove = []
             for chan_id, data in self.active_auctions.items():
                 if not data['active']: 
                     to_remove.append(chan_id)
                     continue
-                
                 if datetime.datetime.now() >= data['end_time']:
                     await self.end_auction_logic(chan_id)
                     to_remove.append(chan_id)
-            
             for rid in to_remove:
                 if rid in self.active_auctions:
                     del self.active_auctions[rid]
-            
             await asyncio.sleep(5)
 
     @commands.Cog.listener()
@@ -55,7 +51,6 @@ class AuctionSystem(commands.Cog):
                     response_text += MESSAGES["auc_bid_autobuy"]
                     auction_data['end_time'] = datetime.datetime.now() + datetime.timedelta(minutes=10)
                 
-                # Cleanup old bid msg
                 if auction_data.get('last_bid_msg_id'):
                     try: await (await message.channel.fetch_message(auction_data['last_bid_msg_id'])).delete()
                     except: pass
@@ -63,7 +58,6 @@ class AuctionSystem(commands.Cog):
                 sent_msg = await message.reply(response_text)
                 auction_data['last_bid_msg_id'] = sent_msg.id
                 
-                # Rate limit channel rename
                 if (datetime.datetime.now().timestamp() - auction_data.get('last_rename', 0)) > 30:
                     try:
                         g_data = load_data()
@@ -72,7 +66,7 @@ class AuctionSystem(commands.Cog):
                         auction_data['last_rename'] = datetime.datetime.now().timestamp()
                     except: pass
 
-    @app_commands.command(name="auction")
+    @app_commands.command(name="auction", description=MESSAGES["desc_auction"])
     async def auction(self, interaction: discord.Interaction, category: discord.CategoryChannel, channel_send: discord.TextChannel, message: str, approval_channel: discord.TextChannel, role_ping: discord.Role, log_channel: discord.TextChannel = None, btn_text: str = None, img_link: str = None):
         if not is_admin_or_has_permission(interaction): return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
         await interaction.response.defer(ephemeral=True)
@@ -118,7 +112,6 @@ class AuctionSystem(commands.Cog):
         
         await channel.edit(overwrites=overwrites)
         
-        # Cleanup
         try: await winner_msg.delete()
         except: pass
         if auction_data.get('last_bid_msg_id'):
