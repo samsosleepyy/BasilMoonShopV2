@@ -4,6 +4,7 @@ from discord.ext import commands
 import sys
 import os
 import datetime
+import asyncio # เพิ่มแล้ว
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import MESSAGES, load_data, save_data, is_admin_or_has_permission, is_support_or_admin
 
