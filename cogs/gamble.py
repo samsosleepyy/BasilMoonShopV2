@@ -25,7 +25,7 @@ class GambleSystem(commands.Cog):
             "step": 1,
             "chances": [0.0] * 15,
             "prizes": [None] * 15,
-            "names": [f"Item {i+1}" for i in range(15)] # Default names
+            "names": [f"Item {i+1}" for i in range(15)]
         }
         view = GambleSetupView1(interaction.user.id)
         await interaction.response.send_message(MESSAGES["gam_setup_1_msg"], view=view, ephemeral=True)
@@ -70,7 +70,7 @@ class GambleSetupView2(discord.ui.View):
     def __init__(self, user_id):
         super().__init__(timeout=None)
         self.user_id = user_id
-    @discord.ui.select(cls=discord.ui.ChannelSelect, channel_types=[discord.ChannelType.text], placeholder="เลือกช่อง Log")
+    @discord.ui.select(cls=discord.ui.ChannelSelect, channel_types=[discord.ChannelType.text], placeholder="เลือกช่อง Log (แจ้งเตือนลูกค้า)")
     async def select_log(self, interaction: discord.Interaction, select: discord.ui.ChannelSelect):
         if interaction.user.id != self.user_id: return
         setup_cache[self.user_id]["log_channel"] = select.values[0]
@@ -187,7 +187,6 @@ class GamblePaymentModal(discord.ui.Modal, title=MESSAGES["gam_modal_pay_title"]
         await interaction.response.defer(ephemeral=True)
         cache = setup_cache[self.user_id]
         cache.update({"pay_tm": self.tm_text.value,"pay_pp": self.pp_text.value,"pay_phone": self.phone.value,"pay_qr": self.qr.value})
-        # Go to Setup 4 (Names)
         view = GambleSetupView4(self.user_id)
         await interaction.edit_original_response(content=MESSAGES["gam_setup_4_msg"], view=view)
 
@@ -290,9 +289,7 @@ class GambleMainView(discord.ui.View):
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     async def play_gacha(self, interaction: discord.Interaction):
-        # 1. Defer interaction to prevent timeout (allow time for animation)
         await interaction.response.defer(ephemeral=True)
-
         data = load_data()
         user_id = str(interaction.user.id)
         points = data["points"].get(user_id, 0)
@@ -320,15 +317,11 @@ class GambleMainView(discord.ui.View):
         if not valid_indices:
             data["points"][user_id] += cost
             save_data(data)
-            
-            # [NEW] Disable Button logic if everything is sold out
-            # Try to update main message to disable button
             try:
-                self.children[0].disabled = True # Gacha button is index 0
+                self.children[0].disabled = True
                 self.children[0].label = "Sold Out"
                 await interaction.message.edit(view=self)
             except: pass
-
             return await interaction.followup.send(MESSAGES["gam_err_sold_out"], ephemeral=True)
 
         prize_index = random.choices(valid_indices, weights=valid_weights, k=1)[0]
@@ -338,29 +331,27 @@ class GambleMainView(discord.ui.View):
             data["claimed_prizes"][msg_id][str(prize_index)] = user_id
             save_data(data)
 
-        # Animation
         embed_anim = discord.Embed(title=MESSAGES["play_anim_title"], color=discord.Color.gold())
         embed_anim.set_image(url=self.config["img_gacha"])
-        
-        # Send animation first (Edit logic: send new ephemeral)
-        # Note: Since we deferred, we use followup. We can't "edit" the loading state easily in ephemeral sequence without sending a new one or editing the deferred response.
-        # Strategy: Send Animation -> Wait -> Edit that message to Result
         
         msg = await interaction.followup.send(embed=embed_anim, ephemeral=True)
         await asyncio.sleep(2)
         
-        embed_res = discord.Embed(title=MESSAGES["play_result_title"], description=MESSAGES["play_result_desc"].format(rank=names[prize_index]),color=discord.Color.green())
+        # [UPDATED] Use prize_name to match config
+        embed_res = discord.Embed(title=MESSAGES["play_result_title"], description=MESSAGES["play_result_desc"].format(prize_name=names[prize_index]),color=discord.Color.green())
         embed_res.set_image(url=prizes[prize_index])
         embed_res.set_footer(text=MESSAGES["point_balance"].format(points=data["points"][user_id]))
         
-        # Edit the animation message to show result
         await msg.edit(embed=embed_res)
 
     async def topup_tm(self, interaction: discord.Interaction):
         await interaction.response.send_modal(TopUpTMModal(self.config))
 
     async def topup_pp(self, interaction: discord.Interaction):
-        await interaction.response.send_modal(TopUpPPModal(self.config))
+        embed = discord.Embed(description=self.config["pay_pp"], color=discord.Color.blue())
+        embed.set_image(url=self.config["pay_qr"])
+        view = PromptPayConfirmView(self.config)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 class TopUpTMModal(discord.ui.Modal, title=MESSAGES["top_tm_modal_title"]):
     link = discord.ui.TextInput(label=MESSAGES["top_tm_lbl_link"])
@@ -386,43 +377,17 @@ class TopUpTMModal(discord.ui.Modal, title=MESSAGES["top_tm_modal_title"]):
             log_id = self.config["log_channel"].id
             log_channel = interaction.guild.get_channel(log_id)
             if log_channel:
-                log_embed = discord.Embed(title="🤖 แจ้งเตือนเติมเงิน (Auto)", color=discord.Color.gold())
+                log_embed = discord.Embed(title=MESSAGES["tm_log_auto_title"], color=discord.Color.gold())
                 log_embed.add_field(name="ผู้เติม", value=interaction.user.mention, inline=True)
                 log_embed.add_field(name="จำนวนเงิน", value=f"{amount} บาท", inline=True)
                 log_embed.set_footer(text=f"Link: {tm_link}")
                 await log_channel.send(embed=log_embed)
         else: await interaction.followup.send(MESSAGES["tm_err_generic"].format(error=result["message"]), ephemeral=True)
 
-class TopUpPPModal(discord.ui.Modal, title=MESSAGES["top_pp_modal_title"]):
-    amount = discord.ui.TextInput(label=MESSAGES["top_pp_lbl_amount"], placeholder="เช่น 50")
-    def __init__(self, config):
-        super().__init__()
-        self.config = config
-    async def on_submit(self, interaction: discord.Interaction):
-        try:
-            amt = float(self.amount.value)
-            if amt <= 0: raise ValueError
-        except: return await interaction.response.send_message(MESSAGES["msg_error_num"], ephemeral=True)
-        await interaction.response.defer(ephemeral=True)
-        kbank = KBankPromptPay()
-        ref_id = str(uuid.uuid4())[:15]
-        qr_text = await kbank.create_qr(amt, ref_id)
-        view = PromptPayConfirmView(self.config, amt)
-        if qr_text:
-            qr_file = kbank.text_to_qr_image(qr_text)
-            embed = discord.Embed(description=MESSAGES["top_pp_msg_api"].format(amount=amt, ref=ref_id), color=discord.Color.blue())
-            embed.set_image(url="attachment://kbank_qr.png")
-            await interaction.followup.send(embed=embed, file=qr_file, view=view, ephemeral=True)
-        else:
-            embed = discord.Embed(description=MESSAGES["top_pp_msg_manual"].format(amount=amt), color=discord.Color.blue())
-            embed.set_image(url=self.config["pay_qr"])
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-
 class PromptPayConfirmView(discord.ui.View):
-    def __init__(self, config, amount):
+    def __init__(self, config):
         super().__init__(timeout=None)
         self.config = config
-        self.amount = amount
     @discord.ui.button(label=MESSAGES["top_pp_btn_confirm"], style=discord.ButtonStyle.green)
     async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
         data = load_data()
@@ -443,7 +408,6 @@ class PromptPayConfirmView(discord.ui.View):
             if app_channel:
                 embed = discord.Embed(title=MESSAGES["top_slip_embed_title"], color=discord.Color.orange())
                 embed.add_field(name="👤 ผู้ใช้", value=interaction.user.mention, inline=True)
-                embed.add_field(name="💰 ยอดที่แจ้ง", value=f"{self.amount} บาท", inline=True)
                 embed.set_image(url=slip_url)
                 view = AdminSlipCheckView(interaction.user.id, channel.id, self.config["log_channel"].id, slip_url)
                 await app_channel.send(embed=embed, view=view)
