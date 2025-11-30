@@ -8,7 +8,7 @@ import asyncio
 import uuid
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import MESSAGES, load_data, save_data, is_admin_or_has_permission, get_files_from_urls
-from utils import TrueMoneyGift, KBankPromptPay
+from utils import TrueMoneyGift
 
 setup_cache = {}
 restock_cache = {} # Cache สำหรับ restock
