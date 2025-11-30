@@ -8,9 +8,10 @@ import asyncio
 import uuid
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import MESSAGES, load_data, save_data, is_admin_or_has_permission, get_files_from_urls
-from utils import TrueMoneyGift
+from utils import TrueMoneyGift, KBankPromptPay
 
 setup_cache = {}
+restock_cache = {} # Cache สำหรับ restock
 
 class GambleSystem(commands.Cog):
     def __init__(self, bot):
@@ -20,7 +21,7 @@ class GambleSystem(commands.Cog):
     async def gamble(self, interaction: discord.Interaction):
         if not is_admin_or_has_permission(interaction): return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
         
-        # Init 15 slots (0-14)
+        # Init 15 slots
         setup_cache[interaction.user.id] = {
             "step": 1,
             "chances": [0.0] * 15,
@@ -30,10 +31,37 @@ class GambleSystem(commands.Cog):
         view = GambleSetupView1(interaction.user.id)
         await interaction.response.send_message(MESSAGES["gam_setup_1_msg"], view=view, ephemeral=True)
 
+    # [NEW] RESTOCK COMMAND
+    @app_commands.command(name="restock", description=MESSAGES["desc_restock"])
+    async def restock(self, interaction: discord.Interaction, message_link: str):
+        if not is_admin_or_has_permission(interaction): return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
+        
+        try:
+            # Link format: https://discord.com/channels/GUILD_ID/CHANNEL_ID/MESSAGE_ID
+            parts = message_link.split('/')
+            msg_id = int(parts[-1])
+            chan_id = int(parts[-2])
+        except:
+            return await interaction.response.send_message(MESSAGES["res_err_invalid_link"], ephemeral=True)
+
+        # Initialize Restock Cache
+        restock_cache[interaction.user.id] = {
+            "target_msg_id": msg_id,
+            "target_channel_id": chan_id,
+            "chances": [0.0] * 15,
+            "prizes": [None] * 15,
+            "names": [f"Item {i+1}" for i in range(15)]
+        }
+        
+        view = RestockView(interaction.user.id)
+        await interaction.response.send_message(MESSAGES["res_setup_msg"].format(url=message_link), view=view, ephemeral=True)
+
 async def setup(bot):
     await bot.add_cog(GambleSystem(bot))
 
-# --- Setup Views ---
+# =========================================
+# SETUP VIEWS (GAMBLE)
+# =========================================
 class GambleSetupView1(discord.ui.View):
     def __init__(self, user_id):
         super().__init__(timeout=None)
@@ -76,7 +104,6 @@ class GambleSetupView2(discord.ui.View):
         setup_cache[self.user_id]["log_channel"] = select.values[0]
         await interaction.response.defer()
     
-    # Buttons for Chances
     @discord.ui.button(label=MESSAGES["gam_btn_chance_1"], style=discord.ButtonStyle.secondary, row=1)
     async def cf_c1(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(GambleListModal(self.user_id, "chance", 1))
@@ -86,8 +113,6 @@ class GambleSetupView2(discord.ui.View):
     @discord.ui.button(label=MESSAGES["gam_btn_chance_3"], style=discord.ButtonStyle.secondary, row=1)
     async def cf_c3(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(GambleListModal(self.user_id, "chance", 3))
-
-    # Buttons for Images
     @discord.ui.button(label=MESSAGES["gam_btn_img_1"], style=discord.ButtonStyle.secondary, row=2)
     async def cf_i1(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(GambleListModal(self.user_id, "image", 1))
@@ -97,7 +122,6 @@ class GambleSetupView2(discord.ui.View):
     @discord.ui.button(label=MESSAGES["gam_btn_img_3"], style=discord.ButtonStyle.secondary, row=2)
     async def cf_i3(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(GambleListModal(self.user_id, "image", 3))
-
     @discord.ui.button(label=MESSAGES["gam_setup_2_next"], style=discord.ButtonStyle.green, row=3)
     async def go_next(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id: return
@@ -106,17 +130,19 @@ class GambleSetupView2(discord.ui.View):
         await interaction.response.edit_message(content=MESSAGES["gam_setup_3_msg"], view=view)
 
 class GambleListModal(discord.ui.Modal):
-    def __init__(self, user_id, mode, part):
-        if mode == "chance": title_key = "gam_modal_chance_title"
-        elif mode == "image": title_key = "gam_modal_img_title"
-        else: title_key = "gam_modal_name_title"
+    def __init__(self, user_id, mode, part, is_restock=False):
+        title_key = "gam_modal_chance_title" if mode == "chance" else "gam_modal_img_title"
+        if mode == "name": title_key = "gam_modal_name_title"
         
         super().__init__(title=MESSAGES[title_key].format(part=part))
         self.user_id = user_id
         self.mode = mode
         self.part = part
+        self.is_restock = is_restock
         self.start_idx = (part - 1) * 5
         self.inputs = []
+        
+        target_cache = restock_cache if is_restock else setup_cache
         
         for i in range(5):
             idx = self.start_idx + i + 1
@@ -126,13 +152,13 @@ class GambleListModal(discord.ui.Modal):
             
             default_val = ""
             if mode == "chance": 
-                v = setup_cache[user_id]["chances"][idx-1]
+                v = target_cache[user_id]["chances"][idx-1]
                 if v > 0: default_val = str(v)
             elif mode == "image":
-                v = setup_cache[user_id]["prizes"][idx-1]
+                v = target_cache[user_id]["prizes"][idx-1]
                 if v: default_val = v
             else:
-                v = setup_cache[user_id]["names"][idx-1]
+                v = target_cache[user_id]["names"][idx-1]
                 if v: default_val = v
 
             item = discord.ui.TextInput(label=MESSAGES[lbl_key].format(n=idx), placeholder=placeholder, required=False, default=default_val)
@@ -140,7 +166,9 @@ class GambleListModal(discord.ui.Modal):
             self.inputs.append(item)
 
     async def on_submit(self, interaction: discord.Interaction):
-        cache = setup_cache[self.user_id]
+        target_cache = restock_cache if self.is_restock else setup_cache
+        cache = target_cache[self.user_id]
+        
         if self.mode == "chance":
             try:
                 for i, item in enumerate(self.inputs):
@@ -151,7 +179,7 @@ class GambleListModal(discord.ui.Modal):
             for i, item in enumerate(self.inputs):
                 val = item.value.strip()
                 cache["prizes"][self.start_idx + i] = val if val else None
-        else: # names
+        else:
             for i, item in enumerate(self.inputs):
                 val = item.value.strip()
                 if val: cache["names"][self.start_idx + i] = val
@@ -228,14 +256,92 @@ class GambleSetupView5(discord.ui.View):
         if not target_channel:
              try: target_channel = await interaction.guild.fetch_channel(raw_channel.id)
              except: return await interaction.followup.send("❌ ไม่พบช่องที่เลือก", ephemeral=True)
+        
         embed = discord.Embed(description=cache["content"], color=discord.Color.green())
         embed.set_image(url=cache["img_main"])
+        
+        # [IMPORTANT] SAVE CONFIG TO DATA
         view = GambleMainView(cache)
-        try:
-            await target_channel.send(embed=embed, view=view)
-            await interaction.followup.send(MESSAGES["gam_setup_finish"], ephemeral=True)
-        except Exception as e: await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+        msg = await target_channel.send(embed=embed, view=view)
+        
+        data = load_data()
+        # Serialize Channel Object to ID
+        save_cache = cache.copy()
+        save_cache["target_channel"] = raw_channel.id
+        save_cache["log_channel"] = cache["log_channel"].id
+        save_cache["approval_channel"] = cache["approval_channel"].id
+        
+        data["gamble_configs"][str(msg.id)] = save_cache
+        save_data(data)
+
+        await interaction.followup.send(MESSAGES["gam_setup_finish"], ephemeral=True)
         del setup_cache[self.user_id]
+
+# =========================================
+# RESTOCK VIEWS
+# =========================================
+class RestockView(discord.ui.View):
+    def __init__(self, user_id):
+        super().__init__(timeout=None)
+        self.user_id = user_id
+
+    @discord.ui.button(label=MESSAGES["gam_btn_chance_1"], style=discord.ButtonStyle.secondary, row=0)
+    async def rc_c1(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(GambleListModal(self.user_id, "chance", 1, is_restock=True))
+    @discord.ui.button(label=MESSAGES["gam_btn_chance_2"], style=discord.ButtonStyle.secondary, row=0)
+    async def rc_c2(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(GambleListModal(self.user_id, "chance", 2, is_restock=True))
+    @discord.ui.button(label=MESSAGES["gam_btn_chance_3"], style=discord.ButtonStyle.secondary, row=0)
+    async def rc_c3(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(GambleListModal(self.user_id, "chance", 3, is_restock=True))
+
+    @discord.ui.button(label=MESSAGES["gam_btn_img_1"], style=discord.ButtonStyle.secondary, row=1)
+    async def rc_i1(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(GambleListModal(self.user_id, "image", 1, is_restock=True))
+    @discord.ui.button(label=MESSAGES["gam_btn_img_2"], style=discord.ButtonStyle.secondary, row=1)
+    async def rc_i2(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(GambleListModal(self.user_id, "image", 2, is_restock=True))
+    @discord.ui.button(label=MESSAGES["gam_btn_img_3"], style=discord.ButtonStyle.secondary, row=1)
+    async def rc_i3(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(GambleListModal(self.user_id, "image", 3, is_restock=True))
+
+    @discord.ui.button(label=MESSAGES["gam_btn_name_1"], style=discord.ButtonStyle.secondary, row=2)
+    async def rc_n1(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(GambleListModal(self.user_id, "name", 1, is_restock=True))
+    @discord.ui.button(label=MESSAGES["gam_btn_name_2"], style=discord.ButtonStyle.secondary, row=2)
+    async def rc_n2(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(GambleListModal(self.user_id, "name", 2, is_restock=True))
+    @discord.ui.button(label=MESSAGES["gam_btn_name_3"], style=discord.ButtonStyle.secondary, row=2)
+    async def rc_n3(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(GambleListModal(self.user_id, "name", 3, is_restock=True))
+
+    @discord.ui.button(label="ยืนยัน Restock ✅", style=discord.ButtonStyle.success, row=3)
+    async def finish_restock(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id: return
+        
+        cache = restock_cache[self.user_id]
+        msg_id = str(cache["target_msg_id"])
+        
+        data = load_data()
+        if msg_id not in data["gamble_configs"]:
+            return await interaction.response.send_message(MESSAGES["res_err_not_found"], ephemeral=True)
+        
+        # Update Data
+        data["gamble_configs"][msg_id]["chances"] = cache["chances"]
+        data["gamble_configs"][msg_id]["prizes"] = cache["prizes"]
+        data["gamble_configs"][msg_id]["names"] = cache["names"]
+        
+        # Reset Claims
+        if "claimed_prizes" in data and msg_id in data["claimed_prizes"]:
+            del data["claimed_prizes"][msg_id]
+            
+        # Reset User Stats for this machine
+        if "gamble_stats" in data and msg_id in data["gamble_stats"]:
+            del data["gamble_stats"][msg_id]
+
+        save_data(data)
+        await interaction.response.send_message(MESSAGES["res_finish_msg"], ephemeral=True)
+        del restock_cache[self.user_id]
 
 # --- Front-end Views ---
 class GambleMainView(discord.ui.View):
@@ -272,10 +378,15 @@ class GambleMainView(discord.ui.View):
     async def check_stock(self, interaction: discord.Interaction):
         data = load_data()
         msg_id = str(interaction.message.id)
+        
+        # Support dynamic config reload
+        config = self.config
+        if msg_id in data["gamble_configs"]: config = data["gamble_configs"][msg_id]
+        
         claimed_map = data.get("claimed_prizes", {}).get(msg_id, {})
-        game_mode = self.config.get("gacha_mode", "unlimited")
-        prizes = self.config["prizes"]
-        names = self.config.get("names", [f"Item {i+1}" for i in range(15)])
+        game_mode = config.get("gacha_mode", "unlimited")
+        prizes = config["prizes"]
+        names = config.get("names", [f"Item {i+1}" for i in range(15)])
         
         desc = ""
         for i, prize_url in enumerate(prizes):
@@ -284,7 +395,11 @@ class GambleMainView(discord.ui.View):
             if game_mode == "limited" and str(i) in claimed_map:
                 winner_id = claimed_map[str(i)]
                 status = MESSAGES["gam_stock_claimed"].format(user=f"<@{winner_id}>")
-            desc += f"**{names[i]}**: {status}\n"
+            
+            # Highlight Special Items (10-14)
+            prefix = "⭐ " if i >= 10 else ""
+            desc += f"{prefix}**{names[i]}**: {status}\n"
+            
         embed = discord.Embed(title=MESSAGES["gam_stock_title"], description=desc, color=discord.Color.gold())
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
@@ -292,57 +407,112 @@ class GambleMainView(discord.ui.View):
         await interaction.response.defer(ephemeral=True)
         data = load_data()
         user_id = str(interaction.user.id)
+        msg_id = str(interaction.message.id)
+        
+        # Reload config from data if exists (for Restock to work)
+        config = self.config
+        if msg_id in data["gamble_configs"]: config = data["gamble_configs"][msg_id]
+        
         points = data["points"].get(user_id, 0)
-        cost = self.config["cost"]
+        cost = config["cost"]
         if points < cost: return await interaction.followup.send(MESSAGES["insufficient_points"].format(cost=cost), ephemeral=True)
         
+        # Deduct Points
         data["points"][user_id] = points - cost
+        
+        # Increment Stats
+        if "gamble_stats" not in data: data["gamble_stats"] = {}
+        if msg_id not in data["gamble_stats"]: data["gamble_stats"][msg_id] = {}
+        user_stats = data["gamble_stats"][msg_id].get(user_id, 0) + 1
+        data["gamble_stats"][msg_id][user_id] = user_stats
+        
         save_data(data)
         
-        chances = self.config["chances"]
-        prizes = self.config["prizes"]
-        names = self.config.get("names", [f"Item {i+1}" for i in range(15)])
-        game_mode = self.config.get("gacha_mode", "unlimited")
-        msg_id = str(interaction.message.id)
+        chances = config["chances"]
+        prizes = config["prizes"]
+        names = config.get("names", [f"Item {i+1}" for i in range(15)])
+        game_mode = config.get("gacha_mode", "unlimited")
         claimed_map = data.get("claimed_prizes", {}).get(msg_id, {})
+        
+        # [NEW] Special Item Logic (0-9 MUST be clear before 10-14)
+        normal_indices = [i for i in range(10)]
+        special_indices = [i for i in range(10, 15)]
+        
+        # Count how many normals are claimed
+        normals_claimed_count = sum(1 for i in normal_indices if str(i) in claimed_map)
         
         valid_indices = []
         valid_weights = []
-        for i in range(15):
+        
+        # Determine valid pool
+        target_range = range(15)
+        
+        # If Limited mode, enforce Locked logic
+        if game_mode == "limited":
+            # If normals not fully claimed, exclude special items
+            # Note: We only care about prizes that actually exist (have url)
+            total_exist_normal = sum(1 for i in normal_indices if prizes[i])
+            
+            if normals_claimed_count < total_exist_normal:
+                # Normal Phase: Only 0-9
+                target_range = range(10)
+            else:
+                # Special Phase: Only 10-14 (or allow mixing if you want, but prompt said "exhaust first")
+                # Assuming "unlock" means they become available.
+                target_range = range(15)
+
+        for i in target_range:
             if chances[i] > 0 and prizes[i]:
                 if game_mode == "limited" and str(i) in claimed_map: continue
                 valid_indices.append(i)
                 valid_weights.append(chances[i])
         
         if not valid_indices:
+            # Refund
             data["points"][user_id] += cost
             save_data(data)
-            try:
-                self.children[0].disabled = True
-                self.children[0].label = "Sold Out"
-                await interaction.message.edit(view=self)
-            except: pass
             return await interaction.followup.send(MESSAGES["gam_err_sold_out"], ephemeral=True)
 
         prize_index = random.choices(valid_indices, weights=valid_weights, k=1)[0]
+        
+        # Save Claim
         if game_mode == "limited":
             if "claimed_prizes" not in data: data["claimed_prizes"] = {}
             if msg_id not in data["claimed_prizes"]: data["claimed_prizes"][msg_id] = {}
             data["claimed_prizes"][msg_id][str(prize_index)] = user_id
             save_data(data)
 
+        # Animation
         embed_anim = discord.Embed(title=MESSAGES["play_anim_title"], color=discord.Color.gold())
-        embed_anim.set_image(url=self.config["img_gacha"])
-        
+        embed_anim.set_image(url=config["img_gacha"])
         msg = await interaction.followup.send(embed=embed_anim, ephemeral=True)
         await asyncio.sleep(2)
         
-        # [UPDATED] Use prize_name to match config
+        # Result
         embed_res = discord.Embed(title=MESSAGES["play_result_title"], description=MESSAGES["play_result_desc"].format(prize_name=names[prize_index]),color=discord.Color.green())
         embed_res.set_image(url=prizes[prize_index])
         embed_res.set_footer(text=MESSAGES["point_balance"].format(points=data["points"][user_id]))
-        
         await msg.edit(embed=embed_res)
+        
+        # Log to Channel
+        log_id = config.get("log_channel", None)
+        # Note: config might store ID directly if loaded from JSON
+        if isinstance(log_id, int): log_chan_id = log_id
+        else: log_chan_id = log_id.id if log_id else None
+        
+        if log_chan_id:
+            log_channel = interaction.guild.get_channel(log_chan_id)
+            if log_channel:
+                total_cost = user_stats * cost
+                desc = MESSAGES["log_reward_desc"].format(
+                    user=interaction.user.mention,
+                    prize=names[prize_index],
+                    attempts=user_stats,
+                    total_cost=total_cost
+                )
+                embed_log = discord.Embed(title=MESSAGES["log_reward_title"], description=desc, color=discord.Color.purple())
+                embed_log.set_thumbnail(url=prizes[prize_index])
+                await log_channel.send(embed=embed_log)
 
     async def topup_tm(self, interaction: discord.Interaction):
         await interaction.response.send_modal(TopUpTMModal(self.config))
@@ -374,7 +544,11 @@ class TopUpTMModal(discord.ui.Modal, title=MESSAGES["top_tm_modal_title"]):
             save_data(data)
             embed = discord.Embed(description=MESSAGES["tm_auto_success"].format(amount=amount, points=points_to_give), color=discord.Color.green())
             await interaction.followup.send(embed=embed, ephemeral=True)
-            log_id = self.config["log_channel"].id
+            
+            log_id = self.config.get("log_channel")
+            if isinstance(log_id, int): pass
+            else: log_id = log_id.id
+            
             log_channel = interaction.guild.get_channel(log_id)
             if log_channel:
                 log_embed = discord.Embed(title=MESSAGES["tm_log_auto_title"], color=discord.Color.gold())
@@ -403,13 +577,19 @@ class PromptPayConfirmView(discord.ui.View):
             msg = await interaction.client.wait_for('message', check=check, timeout=300)
             slip_url = msg.attachments[0].url
             await channel.send(MESSAGES["top_slip_received"])
-            app_id = self.config["approval_channel"].id
+            
+            app_id = self.config.get("approval_channel")
+            if not isinstance(app_id, int): app_id = app_id.id
             app_channel = interaction.guild.get_channel(app_id)
+            
+            log_id = self.config.get("log_channel")
+            if not isinstance(log_id, int): log_id = log_id.id
+            
             if app_channel:
                 embed = discord.Embed(title=MESSAGES["top_slip_embed_title"], color=discord.Color.orange())
                 embed.add_field(name="👤 ผู้ใช้", value=interaction.user.mention, inline=True)
                 embed.set_image(url=slip_url)
-                view = AdminSlipCheckView(interaction.user.id, channel.id, self.config["log_channel"].id, slip_url)
+                view = AdminSlipCheckView(interaction.user.id, channel.id, log_id, slip_url)
                 await app_channel.send(embed=embed, view=view)
         except asyncio.TimeoutError: await channel.delete()
 
