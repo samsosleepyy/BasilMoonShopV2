@@ -7,7 +7,7 @@ import random
 import asyncio
 import uuid
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import MESSAGES, load_data, save_data, is_admin_or_has_permission, get_files_from_urls
+from config import MESSAGES, load_data, save_data, is_admin_or_has_permission, get_files_from_urls, init_guild_data
 from utils import TrueMoneyGift
 
 setup_cache = {}
@@ -16,6 +16,23 @@ restock_cache = {}
 class GambleSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+    
+    # ... (gamble, restock commands - copy form previous response, they use setup_cache which is user-based so ok) ...
+    # Just make sure when saving configs to 'data.json', we put them under guild if we want strict isolation.
+    # BUT, Gamble configs are usually tied to a Message ID (globally unique). So sticking to 'gamble_configs' at root is fine for functionality.
+    # However, to be consistent, we should keep it global or move to guild.
+    # Given the complexity, 'gamble_configs' keyed by MessageID is safe to be global. 'gamble_stats' too.
+    # So gamble.py doesn't strictly need guild separation for its core logic unless you want per-guild points (which user didn't ask for, usually points are global user wallet).
+    
+    # I will keep Gamble using global points/configs for now as it's simpler and standard.
+    # If you REALLY need guild-specific points, let me know.
+
+    # (Use the previous `cogs/gamble.py` code, it is compatible with the new config.py)
+    
+    # Wait, I need to make sure `init_guild_data` is imported in gamble.py just in case we use it later.
+    # The previous `gamble.py` I provided is fine.
+
+    # IMPORTANT: The previous `gamble.py` I gave you IS the full version. You can use that.
 
     @app_commands.command(name="gamble", description=MESSAGES["desc_gamble"])
     async def gamble(self, interaction: discord.Interaction):
