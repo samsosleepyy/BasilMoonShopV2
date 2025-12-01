@@ -7,7 +7,7 @@ import datetime
 import re
 import asyncio
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import MESSAGES, load_data, save_data, is_admin_or_has_permission, get_files_from_urls
+from config import MESSAGES, load_data, save_data, is_admin_or_has_permission, get_files_from_urls, init_guild_data
 
 class AuctionSystem(commands.Cog):
     def __init__(self, bot):
@@ -36,17 +36,37 @@ class AuctionSystem(commands.Cog):
         if message.channel.id in self.active_auctions and self.active_auctions[message.channel.id]['active']:
             content = message.content.strip()
             auction_data = self.active_auctions[message.channel.id]
-            match = re.match(r'^บิด\s*(\d+)', content)
+            
+            # [UPDATE] Regex for 'up' or 'อัพ'
+            match = re.match(r'^(?:up|อัพ|บิด)\s*(\d+)', content, re.IGNORECASE)
             if match:
                 amount = int(match.group(1))
-                if amount < auction_data['current_price'] + auction_data['bid_step']: return
                 
+                # 1. Check unrealistic bid
+                if amount > 9999: return 
+
+                # 2. Check self-bid
+                if message.author.id == auction_data['seller_id']: return
+
+                # 3. Check step validity (Current + Step <= Amount) OR (Start + N*Step)
+                # Simplified: Amount must be > Current and meet Step requirement?
+                # User said: Start 100 Step 10 -> Must bid 110, 120 (Cannot 111)
+                # Formula: (Amount - Start) % Step == 0
+                start_price = auction_data['start_price']
+                bid_step = auction_data['bid_step']
+                current_price = auction_data['current_price']
+                
+                if amount <= current_price: return # Must augment
+                if (amount - start_price) % bid_step != 0: return # Invalid step
+
+                # Valid Bid
                 old_winner = auction_data['winner_id']
                 auction_data['current_price'] = amount
                 auction_data['winner_id'] = message.author.id
                 
                 response_text = MESSAGES["auc_bid_response"].format(user=message.author.mention, amount=amount)
                 if old_winner and old_winner != message.author.id: response_text += MESSAGES["auc_bid_outbid"].format(old_winner=f"<@{old_winner}>")
+                
                 if amount >= auction_data['close_price']:
                     response_text += MESSAGES["auc_bid_autobuy"]
                     auction_data['end_time'] = datetime.datetime.now() + datetime.timedelta(minutes=10)
@@ -58,10 +78,13 @@ class AuctionSystem(commands.Cog):
                 sent_msg = await message.reply(response_text)
                 auction_data['last_bid_msg_id'] = sent_msg.id
                 
+                # Rename Channel (Rate limited)
                 if (datetime.datetime.now().timestamp() - auction_data.get('last_rename', 0)) > 30:
                     try:
-                        g_data = load_data()
-                        new_name = f"ประมูลครั้งที่-{g_data['auction_count']}-ราคา-{amount}"
+                        data = load_data()
+                        init_guild_data(data, message.guild.id)
+                        count = data["guilds"][str(message.guild.id)]["auction_count"]
+                        new_name = f"ประมูลครั้งที่-{count}-ราคา-{amount}"
                         await message.channel.edit(name=new_name)
                         auction_data['last_rename'] = datetime.datetime.now().timestamp()
                     except: pass
@@ -84,21 +107,28 @@ class AuctionSystem(commands.Cog):
         channel = self.bot.get_channel(channel_id)
         if not channel: return
         
-        g_data = load_data()
+        data = load_data()
+        # Guild data access
+        guild_id = str(channel.guild.id)
+        init_guild_data(data, guild_id)
+        count = data["guilds"][guild_id]["auction_count"]
+        lock_time = data["guilds"][guild_id]["lockdown_time"]
+
         winner_id, seller_id = auction_data['winner_id'], auction_data['seller_id']
         
         if winner_id is None:
             if auction_data['log_id']:
                 log = self.bot.get_channel(auction_data['log_id'])
-                embed = discord.Embed(description=MESSAGES["auc_end_no_bid"].format(count=g_data['auction_count'], seller=f"<@{seller_id}>"), color=discord.Color.yellow())
+                embed = discord.Embed(description=MESSAGES["auc_end_no_bid"].format(count=count, seller=f"<@{seller_id}>"), color=discord.Color.yellow())
                 await log.send(embed=embed)
-            await channel.delete()
+            # [UPDATE] Don't delete, send admin close view
+            await channel.send(MESSAGES["msg_channel_ready_delete"], view=AdminCloseView())
             return
 
         winner_mention = f"<@{winner_id}>"
-        winner_msg = await channel.send(MESSAGES["auc_end_winner"].format(winner=winner_mention, count=g_data['auction_count'], price=auction_data['current_price'], time=g_data['lockdown_time']))
+        winner_msg = await channel.send(MESSAGES["auc_end_winner"].format(winner=winner_mention, count=count, price=auction_data['current_price'], time=lock_time))
         
-        await asyncio.sleep(g_data['lockdown_time'])
+        await asyncio.sleep(lock_time)
 
         overwrites = {
             channel.guild.default_role: discord.PermissionOverwrite(read_messages=False),
@@ -106,7 +136,7 @@ class AuctionSystem(commands.Cog):
             channel.guild.get_member(winner_id): discord.PermissionOverwrite(read_messages=True, send_messages=True),
             channel.guild.me: discord.PermissionOverwrite(read_messages=True)
         }
-        for admin_id in g_data["admins"]:
+        for admin_id in data["admins"]:
             mem = channel.guild.get_member(admin_id)
             if mem: overwrites[mem] = discord.PermissionOverwrite(read_messages=True)
         
@@ -121,10 +151,21 @@ class AuctionSystem(commands.Cog):
         embed = discord.Embed(description=MESSAGES["auc_lock_msg"].format(winner=winner_mention), color=discord.Color.green())
         embed.add_field(name="ปุ่มสำหรับผู้เปิดประมูล", value="ด้านล่าง")
         embed.set_image(url=auction_data['img_qr_url'])
-        view = TransactionView(seller_id, winner_id, auction_data, self.bot)
+        view = TransactionView(seller_id, winner_id, auction_data, self.bot, count)
         await channel.send(content=winner_mention, embed=embed, view=view)
 
-# --- Auction Views ---
+class AdminCloseView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+    @discord.ui.button(label=MESSAGES["btn_close_channel"], style=discord.ButtonStyle.danger)
+    async def close(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not is_admin_or_has_permission(interaction): return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
+        await interaction.channel.delete()
+
+# ... (StartAuctionView, AuctionModalStep1, Step2View, AuctionModalStep2 เหมือนเดิม) ...
+# ... (Wait for image logic เหมือนเดิม) ...
+# ... (ApprovalView logic ต้องแก้ data access) ...
+
 class StartAuctionView(discord.ui.View):
     def __init__(self, category, approval_channel, role_ping, log_channel, label, cog):
         super().__init__(timeout=None)
@@ -215,6 +256,7 @@ class AuctionModalStep2(discord.ui.Modal, title=MESSAGES["auc_step2_title"]):
                 await approval_channel.send(embed=base_embed, files=files_to_send, view=view)
         except asyncio.TimeoutError: await channel.delete()
 
+
 class ApprovalView(discord.ui.View):
     def __init__(self, auction_data, temp_channel, cog):
         super().__init__(timeout=None)
@@ -225,11 +267,14 @@ class ApprovalView(discord.ui.View):
         if self.temp_channel: await self.temp_channel.delete()
         category = interaction.guild.get_channel(self.auction_data["category_id"])
         
+        # [UPDATE] Guild specific count
         data = load_data()
-        data["auction_count"] += 1
+        init_guild_data(data, interaction.guild_id)
+        data["guilds"][str(interaction.guild_id)]["auction_count"] += 1
+        count = data["guilds"][str(interaction.guild_id)]["auction_count"]
         save_data(data)
         
-        auction_channel = await interaction.guild.create_text_channel(f"ประมูลครั้งที่-{data['auction_count']}-ราคา-{self.auction_data['start_price']}", category=category)
+        auction_channel = await interaction.guild.create_text_channel(f"ประมูลครั้งที่-{count}-ราคา-{self.auction_data['start_price']}", category=category)
         ping_role = interaction.guild.get_role(self.auction_data["role_ping_id"])
         if ping_role: await auction_channel.send(ping_role.mention, delete_after=5)
         end_time = datetime.datetime.now() + datetime.timedelta(minutes=self.auction_data["duration_minutes"])
@@ -288,23 +333,23 @@ class AuctionControlView(discord.ui.View):
         else: await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
 
 class TransactionView(discord.ui.View):
-    def __init__(self, seller_id, winner_id, auction_data, bot):
+    def __init__(self, seller_id, winner_id, auction_data, bot, count):
         super().__init__(timeout=None)
-        self.seller_id, self.winner_id, self.auction_data, self.bot = seller_id, winner_id, auction_data, bot
+        self.seller_id, self.winner_id, self.auction_data, self.bot, self.count = seller_id, winner_id, auction_data, bot, count
     @discord.ui.button(label=MESSAGES["auc_btn_confirm"], style=discord.ButtonStyle.green)
     async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.seller_id and not is_admin_or_has_permission(interaction): return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
-        view = ConfirmFinalView(self.auction_data, interaction.channel, self.bot)
+        view = ConfirmFinalView(self.auction_data, interaction.channel, self.bot, self.count)
         await interaction.response.send_message(MESSAGES["auc_check_money"], view=view, ephemeral=True)
     @discord.ui.button(label=MESSAGES["auc_btn_cancel"], style=discord.ButtonStyle.red)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.seller_id and not is_admin_or_has_permission(interaction): return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
-        await interaction.response.send_modal(CancelReasonModal(self.auction_data, interaction.channel, self.bot))
+        await interaction.response.send_modal(CancelReasonModal(self.auction_data, interaction.channel, self.bot, self.count))
 
 class ConfirmFinalView(discord.ui.View):
-    def __init__(self, auction_data, channel, bot):
+    def __init__(self, auction_data, channel, bot, count):
         super().__init__(timeout=None)
-        self.auction_data, self.channel, self.bot = auction_data, channel, bot
+        self.auction_data, self.channel, self.bot, self.count = auction_data, channel, bot, count
     @discord.ui.button(label=MESSAGES["auc_btn_double_confirm"], style=discord.ButtonStyle.green)
     async def double_confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
@@ -313,30 +358,33 @@ class ConfirmFinalView(discord.ui.View):
             await winner.send(MESSAGES["auc_dm_content"].format(link=self.auction_data['download_link']))
             dm_msg = MESSAGES["auc_dm_success"]
         except: dm_msg = MESSAGES["auc_dm_fail"].format(user=f"<@{self.auction_data['winner_id']}>")
-        await interaction.followup.send(f"{dm_msg}\nลบช่องใน 1 นาที...", ephemeral=True)
+        await interaction.followup.send(f"{dm_msg}\n{MESSAGES['msg_channel_ready_delete']}", ephemeral=True)
+        
         if self.auction_data['log_id']:
             log = self.bot.get_channel(self.auction_data['log_id'])
             data = load_data()
-            embed = discord.Embed(description=MESSAGES["auc_success_log"].format(count=data['auction_count'], seller=f"<@{self.auction_data['seller_id']}>", winner=f"<@{self.auction_data['winner_id']}>", price=self.auction_data['current_price']), color=discord.Color.green())
+            embed = discord.Embed(description=MESSAGES["auc_success_log"].format(count=self.count, seller=f"<@{self.auction_data['seller_id']}>", winner=f"<@{self.auction_data['winner_id']}>", price=self.auction_data['current_price']), color=discord.Color.green())
             files_to_send = await get_files_from_urls(self.auction_data["img_product_urls"])
             await log.send(embed=embed, files=files_to_send)
-        await asyncio.sleep(60)
-        if self.channel: await self.channel.delete()
+        
+        # Send admin close view instead of auto delete
+        await self.channel.send(MESSAGES["msg_channel_ready_delete"], view=AdminCloseView())
 
 class CancelReasonModal(discord.ui.Modal, title=MESSAGES["auc_modal_cancel_title"]):
     reason = discord.ui.TextInput(label=MESSAGES["auc_lbl_deny_reason"], required=True)
-    def __init__(self, auction_data, channel, bot):
+    def __init__(self, auction_data, channel, bot, count):
         super().__init__()
-        self.auction_data, self.channel, self.bot = auction_data, channel, bot
+        self.auction_data, self.channel, self.bot, self.count = auction_data, channel, bot, count
     async def on_submit(self, interaction: discord.Interaction):
         if self.auction_data['log_id']:
             log = self.bot.get_channel(self.auction_data['log_id'])
             data = load_data()
-            embed = discord.Embed(description=MESSAGES["auc_cancel_log"].format(count=data['auction_count'], seller=f"<@{self.auction_data['seller_id']}>", user=interaction.user.mention, reason=self.reason.value), color=discord.Color.red())
+            embed = discord.Embed(description=MESSAGES["auc_cancel_log"].format(count=self.count, seller=f"<@{self.auction_data['seller_id']}>", user=interaction.user.mention, reason=self.reason.value), color=discord.Color.red())
             await log.send(embed=embed)
         await interaction.response.send_message(MESSAGES["auc_msg_cancel_success"], ephemeral=True)
-        await asyncio.sleep(5)
-        if self.channel: await self.channel.delete()
+        
+        # Send admin close view instead of auto delete
+        await self.channel.send(MESSAGES["msg_channel_ready_delete"], view=AdminCloseView())
 
 async def setup(bot):
     await bot.add_cog(AuctionSystem(bot))
