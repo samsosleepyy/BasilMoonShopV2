@@ -18,7 +18,6 @@ class TicketSystem(commands.Cog):
         data = load_data()
         init_guild_data(data, interaction.guild_id)
         
-        # Save config to guild structure
         if str(forum.id) not in data["guilds"][str(interaction.guild_id)]["ticket_configs"]:
              data["guilds"][str(interaction.guild_id)]["ticket_configs"][str(forum.id)] = {}
         
@@ -40,9 +39,12 @@ class TicketSystem(commands.Cog):
 class TicketForumView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
+    
     @discord.ui.button(label=MESSAGES["tf_btn_buy"], style=discord.ButtonStyle.green, custom_id="tf_buy")
     async def buy(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id == interaction.channel.owner_id: return await interaction.response.send_message(MESSAGES["tf_err_own_post"], ephemeral=True)
+        # เช็คว่าเจ้าของกดเองไหม
+        if interaction.user.id == interaction.channel.owner_id: 
+            return await interaction.response.send_message(MESSAGES["tf_err_own_post"], ephemeral=True)
         
         data = load_data()
         guild_id = str(interaction.guild_id)
@@ -52,6 +54,7 @@ class TicketForumView(discord.ui.View):
         conf = configs.get(str(interaction.channel.parent_id))
         if not conf: return
         
+        # เปลี่ยนปุ่มเป็นสีเทา (Buying)
         button.disabled = True
         button.label = MESSAGES["tf_btn_buying"]
         button.style = discord.ButtonStyle.gray
@@ -62,12 +65,18 @@ class TicketForumView(discord.ui.View):
         save_data(data)
         
         category = interaction.guild.get_channel(conf["category_id"])
-        overwrites = {interaction.guild.default_role: discord.PermissionOverwrite(read_messages=False),interaction.user: discord.PermissionOverwrite(read_messages=True),interaction.channel.owner: discord.PermissionOverwrite(read_messages=True),interaction.guild.me: discord.PermissionOverwrite(read_messages=True)}
+        overwrites = {
+            interaction.guild.default_role: discord.PermissionOverwrite(read_messages=False),
+            interaction.user: discord.PermissionOverwrite(read_messages=True),
+            interaction.channel.owner: discord.PermissionOverwrite(read_messages=True),
+            interaction.guild.me: discord.PermissionOverwrite(read_messages=True)
+        }
         chan_name = f"ID-{count}"
         ticket_chan = await interaction.guild.create_text_channel(chan_name, category=category, overwrites=overwrites)
+        
         msg = MESSAGES["tf_room_created"].format(buyer=interaction.user.mention, seller=interaction.channel.owner.mention)
         
-        # Pass original message ID to revert button later
+        # ส่ง message.id ไปด้วย เพื่อให้ตอนยกเลิก เรากลับมาแก้ปุ่มข้อความนี้ได้ถูก
         view = TicketControlView(interaction.channel.id, conf["log_id"], interaction.user.id, interaction.channel.owner_id, interaction.message.id, count)
         await ticket_chan.send(msg, view=view)
 
@@ -101,7 +110,12 @@ class ReportModal(discord.ui.Modal, title=MESSAGES["tf_modal_report_title"]):
 class TicketControlView(discord.ui.View):
     def __init__(self, forum_thread_id, log_id, buyer_id, seller_id, forum_msg_id, count):
         super().__init__(timeout=None)
-        self.forum_thread_id, self.log_id, self.buyer_id, self.seller_id, self.forum_msg_id, self.count = forum_thread_id, log_id, buyer_id, seller_id, forum_msg_id, count
+        self.forum_thread_id = forum_thread_id
+        self.log_id = log_id
+        self.buyer_id = buyer_id
+        self.seller_id = seller_id
+        self.forum_msg_id = forum_msg_id
+        self.count = count
 
     @discord.ui.button(label=MESSAGES["tf_btn_finish"], style=discord.ButtonStyle.green)
     async def finish(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -122,12 +136,19 @@ class TicketCancelModal(discord.ui.Modal, title=MESSAGES["tf_modal_cancel_title"
     reason = discord.ui.TextInput(label=MESSAGES["tf_lbl_reason"], required=True)
     def __init__(self, log_id, buyer_id, seller_id, forum_thread_id, forum_msg_id, count):
         super().__init__()
-        self.log_id, self.buyer_id, self.seller_id, self.forum_thread_id, self.forum_msg_id, self.count = log_id, buyer_id, seller_id, forum_thread_id, forum_msg_id, count
+        self.log_id = log_id
+        self.buyer_id = buyer_id
+        self.seller_id = seller_id
+        self.forum_thread_id = forum_thread_id
+        self.forum_msg_id = forum_msg_id
+        self.count = count
     
     async def on_submit(self, interaction: discord.Interaction):
+        # 1. ส่ง Log การยกเลิก
         if self.log_id:
             log_chan = interaction.guild.get_channel(self.log_id)
             if log_chan:
+                data = load_data()
                 embed = discord.Embed(title=MESSAGES["tf_log_cancel_title"], description=MESSAGES["tf_log_cancel_desc"].format(count=self.count), color=discord.Color.red())
                 embed.add_field(name="🪧 ผู้ขาย", value=f"<@{self.seller_id}>", inline=True)
                 embed.add_field(name="👤 ผู้ซื้อ", value=f"<@{self.buyer_id}>", inline=True)
@@ -136,32 +157,44 @@ class TicketCancelModal(discord.ui.Modal, title=MESSAGES["tf_modal_cancel_title"
                 embed.timestamp = datetime.datetime.now()
                 await log_chan.send(embed=embed)
         
-        # Re-enable the button in Forum
+        # 2. [FIX] แก้ปุ่มที่ Forum กลับเป็นสีเขียว (ใช้ fetch_channel เพื่อความชัวร์)
         try:
             forum_thread = interaction.guild.get_channel(self.forum_thread_id)
+            if not forum_thread:
+                forum_thread = await interaction.guild.fetch_channel(self.forum_thread_id)
+            
             if forum_thread:
                 msg = await forum_thread.fetch_message(self.forum_msg_id)
-                if msg: await msg.edit(view=TicketForumView())
-        except: pass
+                if msg:
+                    # รีเซ็ต View กลับเป็นค่าเริ่มต้น (ปุ่มเขียว)
+                    await msg.edit(view=TicketForumView())
+        except Exception as e:
+            print(f"Error resetting forum button: {e}")
         
         await interaction.response.send_message(f"ยกเลิกโดย {interaction.user.mention}\nเหตุผล: {self.reason.value}")
-        # Don't delete, send admin close view
-        await interaction.channel.send(MESSAGES["msg_channel_ready_delete"], view=AdminCloseView(None, None, None, None, None)) # Dummy view just for delete button
+        
+        # เปลี่ยนเป็นปุ่มลบห้อง (ไม่ลบเองอัตโนมัติ ให้แอดมินลบ)
+        await interaction.channel.send(MESSAGES["msg_channel_ready_delete"], view=AdminCloseView(None, None, None, None, None))
 
 class AdminCloseView(discord.ui.View):
     def __init__(self, forum_thread_id, log_id, buyer_id, seller_id, count):
         super().__init__(timeout=None)
-        self.forum_thread_id, self.log_id, self.buyer_id, self.seller_id, self.count = forum_thread_id, log_id, buyer_id, seller_id, count
+        self.forum_thread_id = forum_thread_id
+        self.log_id = log_id
+        self.buyer_id = buyer_id
+        self.seller_id = seller_id
+        self.count = count
 
     @discord.ui.button(label=MESSAGES["tf_btn_admin_close"], style=discord.ButtonStyle.danger)
     async def close_all(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not is_support_or_admin(interaction): return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
         await interaction.response.send_message(MESSAGES["processing"], ephemeral=True)
         
-        # If initiated from 'Finish' flow, log success
+        # Log Success (เฉพาะกรณีจบงาน ไม่ใช่ยกเลิก)
         if self.log_id and self.count:
             log_chan = interaction.guild.get_channel(self.log_id)
             if log_chan:
+                data = load_data()
                 embed = discord.Embed(title=MESSAGES["tf_log_success_title"], description=MESSAGES["tf_log_success_desc"].format(count=self.count), color=discord.Color.green())
                 embed.add_field(name="🪧 ผู้ขาย", value=f"<@{self.seller_id}>", inline=True)
                 embed.add_field(name="👤 ผู้ซื้อ", value=f"<@{self.buyer_id}>", inline=True)
@@ -172,16 +205,18 @@ class AdminCloseView(discord.ui.View):
         try: await interaction.channel.delete()
         except: pass
         
-        # Delete forum thread if ID exists
+        # ลบกระทู้ต้นทาง (ถ้ามี ID ส่งมา)
         if self.forum_thread_id:
             try:
                 thread = interaction.guild.get_channel(self.forum_thread_id)
+                if not thread: thread = await interaction.guild.fetch_channel(self.forum_thread_id)
                 if thread: await thread.delete()
             except: pass
 
-    @discord.ui.button(label=MESSAGES["btn_close_channel"], style=discord.ButtonStyle.danger) # Backup button just in case
+    # ปุ่มสำรองเผื่อกรณี Cancel แล้วจะลบแค่ห้อง Ticket
+    @discord.ui.button(label=MESSAGES["btn_close_channel"], style=discord.ButtonStyle.danger)
     async def close_simple(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not is_admin_or_has_permission(interaction): return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
+        if not is_support_or_admin(interaction): return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
         await interaction.channel.delete()
 
 async def setup(bot):
