@@ -6,8 +6,6 @@ import os
 import random
 import asyncio
 import uuid
-
-# Import config and utils
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import MESSAGES, load_data, save_data, is_admin_or_has_permission, get_files_from_urls
 from utils import TrueMoneyGift
@@ -19,14 +17,12 @@ class GambleSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-@app_commands.command(name="gamble", description=MESSAGES["desc_gamble"])
+    @app_commands.command(name="gamble", description=MESSAGES["desc_gamble"])
     async def gamble(self, interaction: discord.Interaction):
-        # 1. Defer ทันที
-        await interaction.response.defer(ephemeral=True)
-
         if not is_admin_or_has_permission(interaction): 
-            return await interaction.followup.send(MESSAGES["no_permission"], ephemeral=True)
+            return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
         
+        # Init 15 slots (0-14)
         setup_cache[interaction.user.id] = {
             "step": 1,
             "chances": [0.0] * 15,
@@ -34,16 +30,13 @@ class GambleSystem(commands.Cog):
             "names": [f"Item {i+1}" for i in range(15)]
         }
         view = GambleSetupView1(interaction.user.id)
-        # 2. ใช้ followup.send แทน response.send_message
-        await interaction.followup.send(MESSAGES["gam_setup_1_msg"], view=view, ephemeral=True)
-        
+        await interaction.response.send_message(MESSAGES["gam_setup_1_msg"], view=view, ephemeral=True)
+
     @app_commands.command(name="restock", description=MESSAGES["desc_restock"])
     async def restock(self, interaction: discord.Interaction, message_link: str):
-        await interaction.response.defer(ephemeral=True) # Defer
-        
         if not is_admin_or_has_permission(interaction): 
-            return await interaction.followup.send(MESSAGES["no_permission"], ephemeral=True)
-            
+            return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
+        
         try:
             parts = message_link.split('/')
             msg_id = int(parts[-1])
@@ -64,8 +57,8 @@ class GambleSystem(commands.Cog):
         }
         
         view = RestockView(interaction.user.id)
-        await interaction.followup.send(MESSAGES["res_setup_msg"].format(url=message_link), view=view, ephemeral=True)
-        
+        await interaction.response.send_message(MESSAGES["res_setup_msg"].format(url=message_link), view=view, ephemeral=True)
+
 async def setup(bot):
     await bot.add_cog(GambleSystem(bot))
 
@@ -553,14 +546,17 @@ class GambleMainView(discord.ui.View):
         await msg.edit(embed=embed_res)
         
         log_id = config.get("log_channel")
-        if log_id:
-            log_chan = interaction.guild.get_channel(log_id)
-            if log_chan:
+        if isinstance(log_id, int): log_chan_id = log_id
+        else: log_chan_id = log_id.id if log_id else None
+        
+        if log_chan_id:
+            log_channel = interaction.guild.get_channel(log_chan_id)
+            if log_channel:
                 total_cost = user_stats * cost
                 desc = MESSAGES["log_reward_desc"].format(user=interaction.user.mention, prize=names[prize_index], attempts=user_stats, total_cost=total_cost)
                 embed_log = discord.Embed(title=MESSAGES["log_reward_title"], description=desc, color=discord.Color.purple())
                 embed_log.set_image(url=prizes[prize_index])
-                await log_chan.send(embed=embed_log)
+                await log_channel.send(embed=embed_log)
 
     async def topup_tm(self, interaction: discord.Interaction):
         await interaction.response.send_modal(TopUpTMModal(self.config))
@@ -570,9 +566,6 @@ class GambleMainView(discord.ui.View):
         embed.set_image(url=self.config["pay_qr"])
         view = PromptPayConfirmView(self.config)
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-
-# ... (TopUpTMModal, PromptPayConfirmView, AdminSlipCheckView, etc. are same as before) ...
-# (I will include them here for completeness)
 
 class TopUpTMModal(discord.ui.Modal, title=MESSAGES["top_tm_modal_title"]):
     link = discord.ui.TextInput(label=MESSAGES["top_tm_lbl_link"])
@@ -595,7 +588,11 @@ class TopUpTMModal(discord.ui.Modal, title=MESSAGES["top_tm_modal_title"]):
             save_data(data)
             embed = discord.Embed(description=MESSAGES["tm_auto_success"].format(amount=amount, points=points_to_give), color=discord.Color.green())
             await interaction.followup.send(embed=embed, ephemeral=True)
-            log_id = self.config["log_channel"]
+            
+            log_id = self.config.get("log_channel")
+            if isinstance(log_id, int): pass
+            else: log_id = log_id.id
+            
             log_channel = interaction.guild.get_channel(log_id)
             if log_channel:
                 log_embed = discord.Embed(title=MESSAGES["tm_log_auto_title"], color=discord.Color.gold())
@@ -619,18 +616,25 @@ class PromptPayConfirmView(discord.ui.View):
         channel = await interaction.guild.create_text_channel(f"slip-{interaction.user.name}", overwrites=overwrites)
         await interaction.response.send_message(MESSAGES["top_slip_room_created"].format(channel=channel.mention), ephemeral=True)
         await channel.send(MESSAGES["top_slip_wait"].format(user=interaction.user.mention))
+        
         def check(m): return m.author.id == interaction.user.id and m.channel.id == channel.id and m.attachments
         try:
             msg = await interaction.client.wait_for('message', check=check, timeout=300)
             slip_url = msg.attachments[0].url
             await channel.send(MESSAGES["top_slip_received"])
-            app_id = self.config["approval_channel"]
+            
+            app_id = self.config.get("approval_channel")
+            if not isinstance(app_id, int): app_id = app_id.id
             app_channel = interaction.guild.get_channel(app_id)
+            
+            log_id = self.config.get("log_channel")
+            if not isinstance(log_id, int): log_id = log_id.id
+            
             if app_channel:
                 embed = discord.Embed(title=MESSAGES["top_slip_embed_title"], color=discord.Color.orange())
                 embed.add_field(name="👤 ผู้ใช้", value=interaction.user.mention, inline=True)
                 embed.set_image(url=slip_url)
-                view = AdminSlipCheckView(interaction.user.id, channel.id, self.config["log_channel"], slip_url)
+                view = AdminSlipCheckView(interaction.user.id, channel.id, log_id, slip_url)
                 await app_channel.send(embed=embed, view=view)
         except asyncio.TimeoutError: await channel.delete()
 
