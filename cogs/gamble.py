@@ -19,12 +19,14 @@ class GambleSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="gamble", description=MESSAGES["desc_gamble"])
+@app_commands.command(name="gamble", description=MESSAGES["desc_gamble"])
     async def gamble(self, interaction: discord.Interaction):
+        # 1. Defer ทันที
+        await interaction.response.defer(ephemeral=True)
+
         if not is_admin_or_has_permission(interaction): 
-            return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
+            return await interaction.followup.send(MESSAGES["no_permission"], ephemeral=True)
         
-        # Init 15 slots (0-14)
         setup_cache[interaction.user.id] = {
             "step": 1,
             "chances": [0.0] * 15,
@@ -32,13 +34,16 @@ class GambleSystem(commands.Cog):
             "names": [f"Item {i+1}" for i in range(15)]
         }
         view = GambleSetupView1(interaction.user.id)
-        await interaction.response.send_message(MESSAGES["gam_setup_1_msg"], view=view, ephemeral=True)
-
+        # 2. ใช้ followup.send แทน response.send_message
+        await interaction.followup.send(MESSAGES["gam_setup_1_msg"], view=view, ephemeral=True)
+        
     @app_commands.command(name="restock", description=MESSAGES["desc_restock"])
     async def restock(self, interaction: discord.Interaction, message_link: str):
-        if not is_admin_or_has_permission(interaction): 
-            return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
+        await interaction.response.defer(ephemeral=True) # Defer
         
+        if not is_admin_or_has_permission(interaction): 
+            return await interaction.followup.send(MESSAGES["no_permission"], ephemeral=True)
+            
         try:
             parts = message_link.split('/')
             msg_id = int(parts[-1])
@@ -59,8 +64,8 @@ class GambleSystem(commands.Cog):
         }
         
         view = RestockView(interaction.user.id)
-        await interaction.response.send_message(MESSAGES["res_setup_msg"].format(url=message_link), view=view, ephemeral=True)
-
+        await interaction.followup.send(MESSAGES["res_setup_msg"].format(url=message_link), view=view, ephemeral=True)
+        
 async def setup(bot):
     await bot.add_cog(GambleSystem(bot))
 
