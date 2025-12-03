@@ -40,18 +40,15 @@ class AuctionSystem(commands.Cog):
             match = re.match(r'^(?:up|อัพ|บิด)\s*(\d+)', content, re.IGNORECASE)
             if match:
                 amount = int(match.group(1))
-                # 1. กันราคาเวอร์เกิน 999,999 (ปรับได้ตามต้องการ)
                 if amount > 999999: return 
-                # 2. ผู้ขายห้ามบิดเอง
                 if message.author.id == auction_data['seller_id']: return
 
-                # 3. เช็คสเต็ปราคา (ต้องลงตัวกับ Bid Step)
                 start_price = auction_data['start_price']
                 bid_step = auction_data['bid_step']
                 current_price = auction_data['current_price']
                 
-                if amount <= current_price: return # ต้องมากกว่าราคาปัจจุบัน
-                if (amount - start_price) % bid_step != 0: return # ต้องลงตัวตาม Step
+                if amount <= current_price: return 
+                if (amount - start_price) % bid_step != 0: return
 
                 old_winner = auction_data['winner_id']
                 auction_data['current_price'] = amount
@@ -71,7 +68,6 @@ class AuctionSystem(commands.Cog):
                 sent_msg = await message.reply(response_text)
                 auction_data['last_bid_msg_id'] = sent_msg.id
                 
-                # เปลี่ยนชื่อช่อง (Rate Limit 30s)
                 if (datetime.datetime.now().timestamp() - auction_data.get('last_rename', 0)) > 30:
                     try:
                         data = load_data()
@@ -84,10 +80,11 @@ class AuctionSystem(commands.Cog):
 
     @app_commands.command(name="auction", description=MESSAGES["desc_auction"])
     async def auction(self, interaction: discord.Interaction, category: discord.CategoryChannel, channel_send: discord.TextChannel, message: str, approval_channel: discord.TextChannel, role_ping: discord.Role, log_channel: discord.TextChannel = None, btn_text: str = None, img_link: str = None):
-        # 1. Defer ทันที
-        await interaction.response.defer(ephemeral=True)
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except:
+            return # Interaction died
 
-        # 2. เช็คสิทธิ์ (ใช้ followup)
         if not is_admin_or_has_permission(interaction): 
             return await interaction.followup.send(MESSAGES["no_permission"], ephemeral=True)
         
@@ -96,10 +93,8 @@ class AuctionSystem(commands.Cog):
         label = btn_text if btn_text else MESSAGES["auc_btn_default"]
         view = StartAuctionView(category, approval_channel, role_ping, log_channel, label, self)
         await channel_send.send(embed=embed, view=view)
-        
-        # 3. แจ้งผล (ใช้ followup)
         await interaction.followup.send(MESSAGES["cmd_success"], ephemeral=True)
-        
+
     async def end_auction_logic(self, channel_id):
         if channel_id not in self.active_auctions: return
         auction_data = self.active_auctions[channel_id]
@@ -234,22 +229,19 @@ class AuctionModalStep2(discord.ui.Modal, title=MESSAGES["auc_step2_title"]):
             
             approval_channel = self.cog.bot.get_channel(auction_data["approval_id"])
             if approval_channel:
-                # [LAYOUT FIX] Approval Request Embed
                 base_embed = discord.Embed(title=MESSAGES["auc_embed_request_title"], color=discord.Color.gold())
                 
                 base_embed.add_field(name="👤 ผู้ขาย", value=f"<@{auction_data['seller_id']}>", inline=True)
-                base_embed.add_field(name="📦 สินค้า", value=auction_data['item_name'], inline=False) # บรรทัดใหม่
+                base_embed.add_field(name="📦 สินค้า", value=f"**{auction_data['item_name']}**", inline=False)
                 
-                # Row: Prices
-                base_embed.add_field(name=MESSAGES["auc_lbl_start"], value=f"{auction_data['start_price']}", inline=True)
-                base_embed.add_field(name=MESSAGES["auc_lbl_step"], value=f"{auction_data['bid_step']}", inline=True)
-                base_embed.add_field(name=MESSAGES["auc_lbl_close"], value=f"{auction_data['close_price']}", inline=True)
+                base_embed.add_field(name=MESSAGES["auc_lbl_start"], value=f"`{auction_data['start_price']}`", inline=True)
+                base_embed.add_field(name=MESSAGES["auc_lbl_step"], value=f"`{auction_data['bid_step']}`", inline=True)
+                base_embed.add_field(name=MESSAGES["auc_lbl_close"], value=f"`{auction_data['close_price']}`", inline=True)
                 
-                base_embed.add_field(name="⏱️ เวลา", value=f"{auction_data['duration_minutes']} นาที", inline=False)
+                base_embed.add_field(name="⏱️ เวลา", value=f"`{auction_data['duration_minutes']} นาที`", inline=False)
                 
-                # Details (Full width)
-                base_embed.add_field(name=MESSAGES["auc_lbl_rights"], value=auction_data['rights'], inline=False)
-                base_embed.add_field(name=MESSAGES["auc_lbl_extra"], value=auction_data['extra_info'], inline=False)
+                base_embed.add_field(name=MESSAGES["auc_lbl_rights"], value=f"```\n{auction_data['rights']}\n```", inline=False)
+                base_embed.add_field(name=MESSAGES["auc_lbl_extra"], value=f"```\n{auction_data['extra_info']}\n```", inline=False)
                 base_embed.add_field(name=MESSAGES["auc_lbl_link"], value=f"||{auction_data['download_link']}||", inline=False)
                 
                 base_embed.set_thumbnail(url=auction_data['img_qr_url'])
@@ -258,6 +250,7 @@ class AuctionModalStep2(discord.ui.Modal, title=MESSAGES["auc_step2_title"]):
                 view = ApprovalView(auction_data, channel, self.cog)
                 await approval_channel.send(embed=base_embed, files=files_to_send, view=view)
         except asyncio.TimeoutError: await channel.delete()
+
 
 class ApprovalView(discord.ui.View):
     def __init__(self, auction_data, temp_channel, cog):
@@ -281,25 +274,20 @@ class ApprovalView(discord.ui.View):
         end_time = datetime.datetime.now() + datetime.timedelta(minutes=self.auction_data["duration_minutes"])
         timestamp = int(end_time.timestamp())
         
-        # [LAYOUT FIX] Main Auction Embed
         main_embed = discord.Embed(description=MESSAGES["auc_embed_title"], color=discord.Color.purple())
         
         main_embed.add_field(name="👤 ผู้เปิดประมูล", value=f"<@{self.auction_data['seller_id']}>", inline=True)
-        main_embed.add_field(name="\u200b", value="\u200b", inline=True) # Spacer
+        main_embed.add_field(name="\u200b", value="\u200b", inline=True)
         
-        # Item Name (Full width to prevent messing up)
         main_embed.add_field(name="📦 " + MESSAGES["auc_lbl_item"], value=f"**{self.auction_data['item_name']}**", inline=False)
         
-        # Prices Row
         main_embed.add_field(name="💰 " + MESSAGES["auc_lbl_start"], value=f"`{self.auction_data['start_price']}`", inline=True)
         main_embed.add_field(name="📈 " + MESSAGES["auc_lbl_step"], value=f"`{self.auction_data['bid_step']}`", inline=True)
         main_embed.add_field(name="⚡ " + MESSAGES["auc_lbl_close"], value=f"`{self.auction_data['close_price']}`", inline=True)
         
-        # Details Row (Full width)
         main_embed.add_field(name="📜 " + MESSAGES["auc_lbl_rights"], value=f"{self.auction_data['rights']}", inline=False)
         main_embed.add_field(name="ℹ️ " + MESSAGES["auc_lbl_extra"], value=f"{self.auction_data['extra_info']}", inline=False)
         
-        # Timer Footer Area
         main_embed.add_field(name="─────────────────", value=f"⏰ **ปิดประมูล : <t:{timestamp}:R>**", inline=False)
         
         files_to_send = await get_files_from_urls(self.auction_data["img_product_urls"])
@@ -350,7 +338,7 @@ class AuctionControlView(discord.ui.View):
 class TransactionView(discord.ui.View):
     def __init__(self, seller_id, winner_id, auction_data, bot, count):
         super().__init__(timeout=None)
-        self.seller_id, self.winner_id, self.auction_data, self.bot, self.count = seller_id, winner_id, auction_data, bot, count
+        self.seller_id, self.winner_id, self.auction_data, self.bot = seller_id, winner_id, auction_data, bot, count
     @discord.ui.button(label=MESSAGES["auc_btn_confirm"], style=discord.ButtonStyle.green)
     async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.seller_id and not is_admin_or_has_permission(interaction): return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
