@@ -84,15 +84,22 @@ class AuctionSystem(commands.Cog):
 
     @app_commands.command(name="auction", description=MESSAGES["desc_auction"])
     async def auction(self, interaction: discord.Interaction, category: discord.CategoryChannel, channel_send: discord.TextChannel, message: str, approval_channel: discord.TextChannel, role_ping: discord.Role, log_channel: discord.TextChannel = None, btn_text: str = None, img_link: str = None):
-        if not is_admin_or_has_permission(interaction): return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
+        # 1. Defer ทันที
         await interaction.response.defer(ephemeral=True)
+
+        # 2. เช็คสิทธิ์ (ใช้ followup)
+        if not is_admin_or_has_permission(interaction): 
+            return await interaction.followup.send(MESSAGES["no_permission"], ephemeral=True)
+        
         embed = discord.Embed(description=message, color=discord.Color.green())
         if img_link: embed.set_image(url=img_link)
         label = btn_text if btn_text else MESSAGES["auc_btn_default"]
         view = StartAuctionView(category, approval_channel, role_ping, log_channel, label, self)
         await channel_send.send(embed=embed, view=view)
+        
+        # 3. แจ้งผล (ใช้ followup)
         await interaction.followup.send(MESSAGES["cmd_success"], ephemeral=True)
-
+        
     async def end_auction_logic(self, channel_id):
         if channel_id not in self.active_auctions: return
         auction_data = self.active_auctions[channel_id]
