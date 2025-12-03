@@ -16,7 +16,7 @@ MESSAGES = {
     "desc_addsupport": "เพิ่มสิทธิ์ Support (ทีมงาน)",
     "desc_removesupport": "ลบสิทธิ์ Support",
     "desc_lockdown": "กำหนดเวลาล็อคช่อง (วินาที)",
-    "desc_resetdata": "รีเซ็ตข้อมูลการนับ ID (แยกตามเซิฟเวอร์)",
+    "desc_resetdata": "รีเซ็ตข้อมูลการนับ ID ต่างๆ",
     "desc_addpoint": "เพิ่ม Point ให้ผู้ใช้",
     "desc_removepoint": "ลบ Point ออกจากผู้ใช้",
     "desc_auction": "เริ่มระบบประมูลสินค้า",
@@ -30,8 +30,6 @@ MESSAGES = {
     "loading": "⏳ กำลังประมวลผล...",
     "processing": "⚙️ กำลังดำเนินการ...",
     "msg_error_num": "❌ กรุณากรอกตัวเลขเท่านั้น",
-    "btn_close_channel": "ปิดห้อง (Admin Only)",
-    "msg_channel_ready_delete": "🔴 **จบการทำงาน** กดปุ่มด้านล่างเพื่อลบห้อง",
     
     # --- Admin Point ---
     "pt_add_success": "✅ เพิ่ม {amount} แต้ม ให้กับ {user} เรียบร้อย",
@@ -50,7 +48,7 @@ MESSAGES = {
     "sys_remove_support": "✅ ลบ {target} ออกจาก Support",
     "sys_not_support": "⚠️ {target} ไม่ได้เป็น Support",
     "sys_lockdown_set": "✅ ตั้งเวลา Lockdown: {seconds} วินาที",
-    "sys_reset_done": "✅ รีเซ็ตข้อมูลประจำเซิฟเวอร์เรียบร้อย",
+    "sys_reset_done": "✅ รีเซ็ตข้อมูลเรียบร้อย",
 
     # --- Gamble Setup ---
     "gam_setup_1_msg": "🛠️ **Setup 1/5**\nเลือกช่องที่จะส่งข้อความกิจกรรม และกรอกข้อมูลเบื้องต้น",
@@ -130,9 +128,9 @@ MESSAGES = {
     "top_tm_lbl_link": "ลิ้งค์ซองอั่งเปา",
     "top_tm_sent": "✅ ส่งข้อมูลแล้ว รอแอดมินตรวจสอบ...",
     "top_tm_log": "🧧 **แจ้งเตือนเติมเงิน (ซอง)**\n👤 ผู้เติม: {user}\n🔗 ลิ้งค์: {link}",
-    "tm_auto_success": "✅ **เติมเงินสำเร็จ!**\n💰 คุณได้รับ: {amount} บาท\n💎 ได้รับแต้ม: {points} Point",
+    "tm_auto_success": "✅ **เติมเงินสำเร็จ!**\n{amount} บาท\nได้รับแต้ม: {points} Point",
     "tm_err_generic": "❌ เกิดข้อผิดพลาดในการเติมเงิน: {error}",
-    "tm_log_auto_title": "🤖 เติมเงินสำเร็จ",
+    "tm_log_auto_title": "🤖 เติมเงินสำเร็จ (Auto)",
     
     "top_pp_modal_title": "เติมเงิน PromptPay",
     "top_pp_lbl_amount": "จำนวนเงินที่ต้องการเติม",
@@ -201,7 +199,7 @@ MESSAGES = {
     "auc_modal_deny_title": "เหตุผลการไม่อนุมัติ",
     "auc_deny_msg": "❌ ปฏิเสธการประมูลแล้ว",
     "auc_log_deny_title": "🚫 ไม่อนุมัติการประมูล",
-    "auc_embed_title": "# ˚₊‧꒰ა ☆ ໒꒱ ‧₊˚\n*🔥 เปิดประมูล!*",
+    "auc_embed_title": "# ˚₊‧꒰ა ☆ ໒꒱ ‧₊˚\n* เปิดประมูล!*",
     "auc_btn_force_close": "🧾 ปิดประมูล",
     "auc_closing": "🛑 กำลังปิดประมูล...",
     "auc_no_data": "❌ เกิดข้อความผิดพลาด ไม่พบข้อมูลการประมูล",
@@ -218,22 +216,24 @@ MESSAGES = {
     "auc_modal_cancel_title": "เหตุผลการยกเลิก",
     "auc_msg_cancel_success": "✅ ยกเลิกเรียบร้อย (รอแอดมินลบห้อง)",
     "auc_dm_success": "✅ ส่งลิ้งค์สินค้าทาง DM แล้วครับ",
-    "auc_dm_fail": "⚠️ ไม่สามารถส่ง DM หา {user} ได้",
+    "auc_dm_fail": "⚠️ ไม่สามารถส่ง DM หา {user} ได้ (เขาอาจปิด DM)",
     "auc_dm_content": "📦 **ดาวน์โหลดสินค้าของคุณ:**\n{link}",
-    "auc_success_log": "── .✦ 𝐒𝐮𝐜𝐜𝐞𝐬𝐬 ✦. ──\n╭﹕ประมูลครั้งที่ - {count}\n | ﹕โดย {seller}\n | ﹕ผู้ชนะ {winner}\n╰ ﹕จบที่ราคา : {price}",
+    "auc_success_log": "── .✦ 𝐒𝐮𝐜𝐜𝐞𝐬𝐬 ✦. ──\n╭﹕📜 ประมูลครั้งที่ - {count}\n | ﹕👤 โดย {seller}\n | ﹕🏆 ผู้ชนะ {winner}\n╰ ﹕💰 จบที่ราคา : {price}",
     "auc_cancel_log": "╭﹕🚫 **ยกเลิกการประมูล** ครั้งที่ {count}\n | ﹕👤 โดย {seller}\n | ﹕❌ ยกเลิกโดย {user}\n╰ ﹕📝 เหตุผล : {reason}",
+    "msg_channel_ready_delete": "🔴 **จบการทำงาน** กดปุ่มด้านล่างเพื่อลบห้อง",
+    "btn_close_channel": "🗑️ ปิดห้อง (Admin Only)",
 
     "tf_setup_success": "✅ ตั้งค่า Forum {forum} เรียบร้อย",
-    "tf_guide_msg": "🔻 กดสั่งซื้อสินค้าตรงนี้",
-    "tf_btn_buy": "🛒 สั่งซื้อ",
+    "tf_guide_msg": "👇 กดสั่งซื้อสินค้าตรงนี้",
+    "tf_btn_buy": "🛒 สั่งซื้อ (Tickets)",
     "tf_btn_buying": "⏳ อยู่ในระหว่างการซื้อ",
-    "tf_btn_report": "🚨 รายงาน",
+    "tf_btn_report": "🚩 รายงาน",
     "tf_err_own_post": "❌ คุณไม่สามารถสั่งซื้อสินค้าของตัวเองได้",
     "tf_err_own_report": "❌ คุณไม่สามารถรายงานโพสต์ของตัวเองได้",
     "tf_only_seller": "🚫 เฉพาะ **ผู้ขาย** เท่านั้นที่สามารถกดปุ่มนี้ได้",
     "tf_room_created": "🔐 **ช่องซื้อขายส่วนตัว**\n👤 ผู้ซื้อ: {buyer}\n👤 ผู้ขาย: {seller}\n-# สามารถเจรจาและโอนเงินได้เลยครับ",
     "tf_wait_admin": "🔔 กำลังเรียกแอดมินมาตรวจสอบ...",
-    "tf_admin_panel_msg": "ปุ่มสำหรับแอดมิน:",
+    "tf_admin_panel_msg": "🛡️ ปุ่มสำหรับแอดมิน:",
     "tf_btn_finish": "เสร็จสิ้น(ปิดช่อง)",
     "tf_btn_cancel": "ยกเลิก",
     "tf_btn_admin_close": "ปิดช่องและลบโพสต์",
@@ -252,20 +252,43 @@ MESSAGES = {
 # DATA MANAGEMENT
 # =========================================
 def load_data():
+    # กำหนดโครงสร้างพื้นฐาน (Schema)
+    default_structure = {
+        "admins": [], "supports": [], 
+        "auction_count": 0, "ticket_count": 0,
+        "ticket_configs": {}, "lockdown_time": 0, 
+        "points": {}, 
+        "claimed_prizes": {}, 
+        "gamble_configs": {}, 
+        "gamble_stats": {},
+        "guilds": {}
+    }
+
     if not os.path.exists(DATA_FILE):
-        return {
-            "admins": [], "supports": [],
-            "guilds": {}, # [NEW] Structure for Guild-specific data
-            "points": {}, # Points remain global (usually)
-        }
+        return default_structure
+
     with open(DATA_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+        try:
+            data = json.load(f)
+        except:
+            return default_structure
+
+    # [FIX] Auto-Migration: เติมคีย์ที่หายไปโดยอัตโนมัติ
+    changed = False
+    for key, value in default_structure.items():
+        if key not in data:
+            data[key] = value
+            changed = True
+    
+    if changed:
+        save_data(data)
+
+    return data
 
 def save_data(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
 
-# [NEW] Helper to ensure guild data exists
 def init_guild_data(data, guild_id):
     str_id = str(guild_id)
     if "guilds" not in data: data["guilds"] = {}
