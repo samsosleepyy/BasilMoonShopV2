@@ -4,6 +4,7 @@ from discord.ext import commands
 import sys
 import os
 import datetime
+import asyncio
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import MESSAGES, load_data, save_data, is_admin_or_has_permission, is_support_or_admin, init_guild_data
 
@@ -34,67 +35,84 @@ class AdminSystem(commands.Cog):
             
         await interaction.followup.send(msg, ephemeral=True)
 
-    # [NEW] Anti-Raid Logic
+    # Anti-Raid Logic
     @commands.Cog.listener()
     async def on_webhooks_update(self, channel):
         guild = channel.guild
         data = load_data()
         guild_id = str(guild.id)
         
-        # Check if data exists and feature is enabled
         if "guilds" not in data or guild_id not in data["guilds"]: return
         ar_config = data["guilds"][guild_id].get("antiraid", {"status": False})
         
         if not ar_config["status"]: return
         
-        # Fetch Audit Logs
         try:
+            # Check audit log for webhook creation
             async for entry in guild.audit_logs(limit=1, action=discord.AuditLogAction.webhook_create):
-                # Check if this entry is recent (within 5 seconds)
-                time_diff = datetime.datetime.now(datetime.timezone.utc) - entry.created_at
-                if time_diff.total_seconds() > 10: return # Too old
+                if (datetime.datetime.now(datetime.timezone.utc) - entry.created_at).total_seconds() > 10: return
 
                 user = entry.user
-                if user.bot: return # Allow bots (optional)
+                if user.bot: return 
                 
-                # Check if user is admin
-                is_admin = False
-                if user.guild_permissions.administrator: is_admin = True
-                if user.id in data["admins"]: is_admin = True
+                # Check if user is admin/support
+                is_authorized = False
+                if user.guild_permissions.administrator: is_authorized = True
+                if user.id in data["admins"]: is_authorized = True
                 for role in user.roles:
-                    if role.id in data["admins"]: is_admin = True
+                    if role.id in data["admins"]: is_authorized = True
                 
-                if not is_admin:
-                    # UNATHORIZED DETECTED!
+                log_chan_id = ar_config.get("log_channel")
+                log_chan = guild.get_channel(log_chan_id) if log_chan_id else None
+
+                if is_authorized:
+                    # Authorized: Just Log (Safe)
+                    if log_chan:
+                        embed = discord.Embed(title=MESSAGES["ar_log_title_safe"], description=MESSAGES["ar_log_desc_safe"], color=discord.Color.green())
+                        embed.add_field(name=MESSAGES["ar_field_user"], value=MESSAGES["ar_val_user"].format(mention=user.mention, id=user.id), inline=True)
+                        embed.add_field(name=MESSAGES["ar_field_webhook"], value=MESSAGES["ar_val_webhook"].format(name=entry.target.name, id=entry.target.id), inline=True)
+                        embed.add_field(name=MESSAGES["ar_field_action"], value=MESSAGES["ar_action_safe"], inline=False)
+                        embed.timestamp = datetime.datetime.now()
+                        await log_chan.send(embed=embed)
+
+                else:
+                    # Unauthorized: Delete & Ban & Alert
                     webhook = entry.target
-                    
-                    # 1. Delete Webhook
                     try: await webhook.delete(reason="Anti-Raid: Unauthorized creation")
                     except: pass
                     
-                    # 2. Remove Permissions (Overwrite)
                     try:
                         await channel.set_permissions(user, manage_webhooks=False, reason="Anti-Raid: Blocked user")
                     except: pass
                     
-                    # 3. Log
-                    log_chan_id = ar_config.get("log_channel")
-                    if log_chan_id:
-                        log_chan = guild.get_channel(log_chan_id)
-                        if log_chan:
-                            embed = discord.Embed(title=MESSAGES["ar_log_title"], description=MESSAGES["ar_log_desc"], color=discord.Color.red())
-                            embed.add_field(name=MESSAGES["ar_field_user"], value=MESSAGES["ar_val_user"].format(mention=user.mention, id=user.id), inline=True)
-                            embed.add_field(name=MESSAGES["ar_field_webhook"], value=MESSAGES["ar_val_webhook"].format(name=webhook.name, id=webhook.id), inline=True)
-                            embed.add_field(name=MESSAGES["ar_field_action"], value=MESSAGES["ar_action_taken"], inline=False)
-                            embed.timestamp = datetime.datetime.now()
-                            await log_chan.send(embed=embed)
+                    if log_chan:
+                        # Construct Pings
+                        pings = []
+                        for admin_id in data["admins"]:
+                            # Try to resolve if role or user
+                            if guild.get_role(admin_id): pings.append(f"<@&{admin_id}>")
+                            else: pings.append(f"<@{admin_id}>")
+                        
+                        for sup_id in data["supports"]:
+                            if guild.get_role(sup_id): pings.append(f"<@&{sup_id}>")
+                            else: pings.append(f"<@{sup_id}>")
+                            
+                        ping_str = " ".join(pings) if pings else "@here"
+                        
+                        embed = discord.Embed(title=MESSAGES["ar_log_title"], description=MESSAGES["ar_log_desc"], color=discord.Color.red())
+                        embed.add_field(name=MESSAGES["ar_field_user"], value=MESSAGES["ar_val_user"].format(mention=user.mention, id=user.id), inline=True)
+                        embed.add_field(name=MESSAGES["ar_field_webhook"], value=MESSAGES["ar_val_webhook"].format(name=webhook.name, id=webhook.id), inline=True)
+                        embed.add_field(name=MESSAGES["ar_field_action"], value=MESSAGES["ar_action_taken"], inline=False)
+                        embed.timestamp = datetime.datetime.now()
+                        
+                        # Send with pings
+                        await log_chan.send(content=MESSAGES["ar_ping_msg"].format(mentions=ping_str), embed=embed)
                     
-                    # Break loop after handling
                     return 
         except Exception as e:
             print(f"Anti-Raid Error: {e}")
 
-    # ... (คำสั่งอื่นๆ เหมือนเดิม) ...
+    # ... (คำสั่งอื่นๆ คงเดิม) ...
     @app_commands.command(name="addadmin", description=MESSAGES["desc_addadmin"])
     async def addadmin(self, interaction: discord.Interaction, target: discord.User | discord.Role):
         await interaction.response.defer(ephemeral=True)
