@@ -37,29 +37,22 @@ class AuctionSystem(commands.Cog):
             content = message.content.strip()
             auction_data = self.active_auctions[message.channel.id]
             
-            # [UPDATE] Regex for 'up' or 'อัพ'
             match = re.match(r'^(?:up|อัพ|บิด)\s*(\d+)', content, re.IGNORECASE)
             if match:
                 amount = int(match.group(1))
-                
-                # 1. Check unrealistic bid
-                if amount > 9999: return 
-
-                # 2. Check self-bid
+                # 1. กันราคาเวอร์เกิน 999,999 (ปรับได้ตามต้องการ)
+                if amount > 999999: return 
+                # 2. ผู้ขายห้ามบิดเอง
                 if message.author.id == auction_data['seller_id']: return
 
-                # 3. Check step validity (Current + Step <= Amount) OR (Start + N*Step)
-                # Simplified: Amount must be > Current and meet Step requirement?
-                # User said: Start 100 Step 10 -> Must bid 110, 120 (Cannot 111)
-                # Formula: (Amount - Start) % Step == 0
+                # 3. เช็คสเต็ปราคา (ต้องลงตัวกับ Bid Step)
                 start_price = auction_data['start_price']
                 bid_step = auction_data['bid_step']
                 current_price = auction_data['current_price']
                 
-                if amount <= current_price: return # Must augment
-                if (amount - start_price) % bid_step != 0: return # Invalid step
+                if amount <= current_price: return # ต้องมากกว่าราคาปัจจุบัน
+                if (amount - start_price) % bid_step != 0: return # ต้องลงตัวตาม Step
 
-                # Valid Bid
                 old_winner = auction_data['winner_id']
                 auction_data['current_price'] = amount
                 auction_data['winner_id'] = message.author.id
@@ -78,7 +71,7 @@ class AuctionSystem(commands.Cog):
                 sent_msg = await message.reply(response_text)
                 auction_data['last_bid_msg_id'] = sent_msg.id
                 
-                # Rename Channel (Rate limited)
+                # เปลี่ยนชื่อช่อง (Rate Limit 30s)
                 if (datetime.datetime.now().timestamp() - auction_data.get('last_rename', 0)) > 30:
                     try:
                         data = load_data()
@@ -108,7 +101,6 @@ class AuctionSystem(commands.Cog):
         if not channel: return
         
         data = load_data()
-        # Guild data access
         guild_id = str(channel.guild.id)
         init_guild_data(data, guild_id)
         count = data["guilds"][guild_id]["auction_count"]
@@ -121,7 +113,6 @@ class AuctionSystem(commands.Cog):
                 log = self.bot.get_channel(auction_data['log_id'])
                 embed = discord.Embed(description=MESSAGES["auc_end_no_bid"].format(count=count, seller=f"<@{seller_id}>"), color=discord.Color.yellow())
                 await log.send(embed=embed)
-            # [UPDATE] Don't delete, send admin close view
             await channel.send(MESSAGES["msg_channel_ready_delete"], view=AdminCloseView())
             return
 
@@ -161,10 +152,6 @@ class AdminCloseView(discord.ui.View):
     async def close(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not is_admin_or_has_permission(interaction): return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
         await interaction.channel.delete()
-
-# ... (StartAuctionView, AuctionModalStep1, Step2View, AuctionModalStep2 เหมือนเดิม) ...
-# ... (Wait for image logic เหมือนเดิม) ...
-# ... (ApprovalView logic ต้องแก้ data access) ...
 
 class StartAuctionView(discord.ui.View):
     def __init__(self, category, approval_channel, role_ping, log_channel, label, cog):
@@ -240,22 +227,30 @@ class AuctionModalStep2(discord.ui.Modal, title=MESSAGES["auc_step2_title"]):
             
             approval_channel = self.cog.bot.get_channel(auction_data["approval_id"])
             if approval_channel:
+                # [LAYOUT FIX] Approval Request Embed
                 base_embed = discord.Embed(title=MESSAGES["auc_embed_request_title"], color=discord.Color.gold())
-                base_embed.add_field(name="ผู้ขาย", value=f"<@{auction_data['seller_id']}>", inline=False)
-                base_embed.add_field(name="สินค้า", value=auction_data['item_name'], inline=True)
-                base_embed.add_field(name="ราคาเริ่ม", value=f"{auction_data['start_price']}", inline=True)
-                base_embed.add_field(name="บิดครั้งละ", value=f"{auction_data['bid_step']}", inline=True)
-                base_embed.add_field(name="ราคาปิด", value=f"{auction_data['close_price']}", inline=True)
-                base_embed.add_field(name="สิทธิ์", value=f"{auction_data['rights']}", inline=True)
-                base_embed.add_field(name="เวลาประมูล", value=f"{auction_data['duration_minutes']} นาที", inline=True)
-                base_embed.add_field(name="ลิ้งค์สินค้า", value=f"{auction_data['download_link']}", inline=False)
-                base_embed.add_field(name="เพิ่มเติม", value=f"{auction_data['extra_info']}", inline=False)
+                
+                base_embed.add_field(name="👤 ผู้ขาย", value=f"<@{auction_data['seller_id']}>", inline=True)
+                base_embed.add_field(name="📦 สินค้า", value=auction_data['item_name'], inline=False) # บรรทัดใหม่
+                
+                # Row: Prices
+                base_embed.add_field(name=MESSAGES["auc_lbl_start"], value=f"{auction_data['start_price']}", inline=True)
+                base_embed.add_field(name=MESSAGES["auc_lbl_step"], value=f"{auction_data['bid_step']}", inline=True)
+                base_embed.add_field(name=MESSAGES["auc_lbl_close"], value=f"{auction_data['close_price']}", inline=True)
+                
+                base_embed.add_field(name="⏱️ เวลา", value=f"{auction_data['duration_minutes']} นาที", inline=False)
+                
+                # Details (Full width)
+                base_embed.add_field(name=MESSAGES["auc_lbl_rights"], value=auction_data['rights'], inline=False)
+                base_embed.add_field(name=MESSAGES["auc_lbl_extra"], value=auction_data['extra_info'], inline=False)
+                base_embed.add_field(name=MESSAGES["auc_lbl_link"], value=f"||{auction_data['download_link']}||", inline=False)
+                
                 base_embed.set_thumbnail(url=auction_data['img_qr_url'])
+                
                 files_to_send = await get_files_from_urls(auction_data["img_product_urls"])
                 view = ApprovalView(auction_data, channel, self.cog)
                 await approval_channel.send(embed=base_embed, files=files_to_send, view=view)
         except asyncio.TimeoutError: await channel.delete()
-
 
 class ApprovalView(discord.ui.View):
     def __init__(self, auction_data, temp_channel, cog):
@@ -267,7 +262,6 @@ class ApprovalView(discord.ui.View):
         if self.temp_channel: await self.temp_channel.delete()
         category = interaction.guild.get_channel(self.auction_data["category_id"])
         
-        # [UPDATE] Guild specific count
         data = load_data()
         init_guild_data(data, interaction.guild_id)
         data["guilds"][str(interaction.guild_id)]["auction_count"] += 1
@@ -279,15 +273,28 @@ class ApprovalView(discord.ui.View):
         if ping_role: await auction_channel.send(ping_role.mention, delete_after=5)
         end_time = datetime.datetime.now() + datetime.timedelta(minutes=self.auction_data["duration_minutes"])
         timestamp = int(end_time.timestamp())
+        
+        # [LAYOUT FIX] Main Auction Embed
         main_embed = discord.Embed(description=MESSAGES["auc_embed_title"], color=discord.Color.purple())
-        main_embed.add_field(name="**➜「 โดย.ᐟ 」: **", value=f"<@{self.auction_data['seller_id']}>", inline=False)
-        main_embed.add_field(name="**➜「 ราคาเริ่มต้น 」: **", value=f"{self.auction_data['start_price']}", inline=True)
-        main_embed.add_field(name="**➜「 บิดครั้งละ 」: **", value=f"{self.auction_data['bid_step']}", inline=True)
-        main_embed.add_field(name="**➜「 ราคาปิดประมูล 」: **", value=f"{self.auction_data['close_price']}", inline=True)
-        main_embed.add_field(name="**➜「 สิ่งที่ได้ 」: **", value=f"{self.auction_data['item_name']}", inline=True)
-        main_embed.add_field(name="**➜「 สิทธิ์ 」: **", value=f"{self.auction_data['rights']}", inline=True)
-        main_embed.add_field(name="**➜「 เพิ่มเติม 」: **", value=f"{self.auction_data['extra_info']}", inline=False)
-        main_embed.add_field(name="-ˋˏ✄┈┈┈┈", value=f"เวลาปิดประมูล : <t:{timestamp}:R>", inline=False)
+        
+        main_embed.add_field(name="👤 ผู้เปิดประมูล", value=f"<@{self.auction_data['seller_id']}>", inline=True)
+        main_embed.add_field(name="\u200b", value="\u200b", inline=True) # Spacer
+        
+        # Item Name (Full width to prevent messing up)
+        main_embed.add_field(name="📦 " + MESSAGES["auc_lbl_item"], value=f"**{self.auction_data['item_name']}**", inline=False)
+        
+        # Prices Row
+        main_embed.add_field(name="💰 " + MESSAGES["auc_lbl_start"], value=f"`{self.auction_data['start_price']}`", inline=True)
+        main_embed.add_field(name="📈 " + MESSAGES["auc_lbl_step"], value=f"`{self.auction_data['bid_step']}`", inline=True)
+        main_embed.add_field(name="⚡ " + MESSAGES["auc_lbl_close"], value=f"`{self.auction_data['close_price']}`", inline=True)
+        
+        # Details Row (Full width)
+        main_embed.add_field(name="📜 " + MESSAGES["auc_lbl_rights"], value=f"{self.auction_data['rights']}", inline=False)
+        main_embed.add_field(name="ℹ️ " + MESSAGES["auc_lbl_extra"], value=f"{self.auction_data['extra_info']}", inline=False)
+        
+        # Timer Footer Area
+        main_embed.add_field(name="─────────────────", value=f"⏰ **ปิดประมูล : <t:{timestamp}:R>**", inline=False)
+        
         files_to_send = await get_files_from_urls(self.auction_data["img_product_urls"])
         view = AuctionControlView(self.auction_data['seller_id'], self.cog)
         msg = await auction_channel.send(embed=main_embed, view=view)
@@ -298,6 +305,7 @@ class ApprovalView(discord.ui.View):
         
         await interaction.followup.send(MESSAGES["auc_admin_approve_log"].format(channel=auction_channel.mention))
         self.stop()
+
     @discord.ui.button(label=MESSAGES["auc_btn_deny"], style=discord.ButtonStyle.red)
     async def deny(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(DenyModal(self.auction_data, self.temp_channel, self.cog))
@@ -367,7 +375,6 @@ class ConfirmFinalView(discord.ui.View):
             files_to_send = await get_files_from_urls(self.auction_data["img_product_urls"])
             await log.send(embed=embed, files=files_to_send)
         
-        # Send admin close view instead of auto delete
         await self.channel.send(MESSAGES["msg_channel_ready_delete"], view=AdminCloseView())
 
 class CancelReasonModal(discord.ui.Modal, title=MESSAGES["auc_modal_cancel_title"]):
@@ -383,7 +390,6 @@ class CancelReasonModal(discord.ui.Modal, title=MESSAGES["auc_modal_cancel_title
             await log.send(embed=embed)
         await interaction.response.send_message(MESSAGES["auc_msg_cancel_success"], ephemeral=True)
         
-        # Send admin close view instead of auto delete
         await self.channel.send(MESSAGES["msg_channel_ready_delete"], view=AdminCloseView())
 
 async def setup(bot):
