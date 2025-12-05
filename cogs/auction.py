@@ -282,11 +282,11 @@ class ApprovalView(discord.ui.View):
         main_embed.add_field(name="\u200b", value="\u200b", inline=True)
         
         # จัดให้ Item Name เป็นบรรทัดใหม่
-        main_embed.add_field(name="📦 สิ่งที่ได้ " + MESSAGES["auc_lbl_item"], value=f"**{self.auction_data['item_name']}**", inline=False)
+        main_embed.add_field(name=MESSAGES["auc_lbl_item"], value=f"**{self.auction_data['item_name']}**", inline=False)
         
-        main_embed.add_field(name="💰 ราคาเริ่มต้น " + MESSAGES["auc_lbl_start"], value=f"`{self.auction_data['start_price']}`", inline=True)
-        main_embed.add_field(name="📈 บิดครั้งละ " + MESSAGES["auc_lbl_step"], value=f"`{self.auction_data['bid_step']}`", inline=True)
-        main_embed.add_field(name="🛎️ ราคาปิดประมูล " + MESSAGES["auc_lbl_close"], value=f"`{self.auction_data['close_price']}`", inline=True)
+        main_embed.add_field(name=MESSAGES["auc_lbl_start"], value=f"`{self.auction_data['start_price']}`", inline=True)
+        main_embed.add_field(name=MESSAGES["auc_lbl_step"], value=f"`{self.auction_data['bid_step']}`", inline=True)
+        main_embed.add_field(name=MESSAGES["auc_lbl_close"], value=f"`{self.auction_data['close_price']}`", inline=True)
         
         main_embed.add_field(name="📜 " + MESSAGES["auc_lbl_rights"], value=f"{self.auction_data['rights']}", inline=False)
         main_embed.add_field(name="ℹ️ เพิ่มเติม " + MESSAGES["auc_lbl_extra"], value=f"{self.auction_data['extra_info']}", inline=False)
@@ -341,7 +341,7 @@ class AuctionControlView(discord.ui.View):
 class TransactionView(discord.ui.View):
     def __init__(self, seller_id, winner_id, auction_data, bot, count):
         super().__init__(timeout=None)
-        # แก้ไขบรรทัดนี้: เพิ่ม self.count เข้าไปด้านซ้าย
+        # [FIXED] เพิ่ม self.count เพื่อแก้ ValueError
         self.seller_id, self.winner_id, self.auction_data, self.bot, self.count = seller_id, winner_id, auction_data, bot, count
 
     @discord.ui.button(label=MESSAGES["auc_btn_confirm"], style=discord.ButtonStyle.green)
@@ -349,11 +349,11 @@ class TransactionView(discord.ui.View):
         if interaction.user.id != self.seller_id and not is_admin_or_has_permission(interaction): return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
         view = ConfirmFinalView(self.auction_data, interaction.channel, self.bot, self.count)
         await interaction.response.send_message(MESSAGES["auc_check_money"], view=view, ephemeral=True)
-    
     @discord.ui.button(label=MESSAGES["auc_btn_cancel"], style=discord.ButtonStyle.red)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.seller_id and not is_admin_or_has_permission(interaction): return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
         await interaction.response.send_modal(CancelReasonModal(self.auction_data, interaction.channel, self.bot, self.count))
+
 class ConfirmFinalView(discord.ui.View):
     def __init__(self, auction_data, channel, bot, count):
         super().__init__(timeout=None)
