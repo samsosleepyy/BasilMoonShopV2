@@ -341,17 +341,19 @@ class AuctionControlView(discord.ui.View):
 class TransactionView(discord.ui.View):
     def __init__(self, seller_id, winner_id, auction_data, bot, count):
         super().__init__(timeout=None)
-        self.seller_id, self.winner_id, self.auction_data, self.bot = seller_id, winner_id, auction_data, bot, count
+        # แก้ไขบรรทัดนี้: เพิ่ม self.count เข้าไปด้านซ้าย
+        self.seller_id, self.winner_id, self.auction_data, self.bot, self.count = seller_id, winner_id, auction_data, bot, count
+
     @discord.ui.button(label=MESSAGES["auc_btn_confirm"], style=discord.ButtonStyle.green)
     async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.seller_id and not is_admin_or_has_permission(interaction): return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
         view = ConfirmFinalView(self.auction_data, interaction.channel, self.bot, self.count)
         await interaction.response.send_message(MESSAGES["auc_check_money"], view=view, ephemeral=True)
+    
     @discord.ui.button(label=MESSAGES["auc_btn_cancel"], style=discord.ButtonStyle.red)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.seller_id and not is_admin_or_has_permission(interaction): return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
         await interaction.response.send_modal(CancelReasonModal(self.auction_data, interaction.channel, self.bot, self.count))
-
 class ConfirmFinalView(discord.ui.View):
     def __init__(self, auction_data, channel, bot, count):
         super().__init__(timeout=None)
