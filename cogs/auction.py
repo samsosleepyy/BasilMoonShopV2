@@ -104,12 +104,16 @@ class AuctionSystem(commands.Cog):
 
         winner_id, seller_id = auction_data['winner_id'], auction_data['seller_id']
         
+        # [MODIFIED] กรณีไม่มีผู้ชนะ: ส่ง Log แล้วลบห้องทันที
         if winner_id is None:
             if auction_data['log_id']:
                 log = self.bot.get_channel(auction_data['log_id'])
-                embed = discord.Embed(description=MESSAGES["auc_end_no_bid"].format(count=count, seller=f"<@{seller_id}>"), color=discord.Color.yellow())
-                await log.send(embed=embed)
-            await channel.send(MESSAGES["msg_channel_ready_delete"], view=AdminCloseView())
+                if log:
+                    embed = discord.Embed(description=MESSAGES["auc_end_no_bid"].format(count=count, seller=f"<@{seller_id}>"), color=discord.Color.yellow())
+                    await log.send(embed=embed)
+            
+            # ลบห้องทันทีโดยไม่ต้องรอ Admin
+            await channel.delete()
             return
 
         winner_mention = f"<@{winner_id}>"
