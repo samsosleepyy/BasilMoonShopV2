@@ -282,14 +282,14 @@ class ApprovalView(discord.ui.View):
         main_embed.add_field(name="\u200b", value="\u200b", inline=True)
         
         # จัดให้ Item Name เป็นบรรทัดใหม่
-        main_embed.add_field(name=MESSAGES["auc_lbl_item"], value=f"**{self.auction_data['item_name']}**", inline=False)
+        main_embed.add_field(name="📦 " + MESSAGES["auc_lbl_item"], value=f"**{self.auction_data['item_name']}**", inline=False)
         
-        main_embed.add_field(name=MESSAGES["auc_lbl_start"], value=f"`{self.auction_data['start_price']}`", inline=True)
-        main_embed.add_field(name=MESSAGES["auc_lbl_step"], value=f"`{self.auction_data['bid_step']}`", inline=True)
-        main_embed.add_field(name=MESSAGES["auc_lbl_close"], value=f"`{self.auction_data['close_price']}`", inline=True)
+        main_embed.add_field(name="💰 " + MESSAGES["auc_lbl_start"], value=f"`{self.auction_data['start_price']}`", inline=True)
+        main_embed.add_field(name="📈 " + MESSAGES["auc_lbl_step"], value=f"`{self.auction_data['bid_step']}`", inline=True)
+        main_embed.add_field(name="🛎️ " + MESSAGES["auc_lbl_close"], value=f"`{self.auction_data['close_price']}`", inline=True)
         
         main_embed.add_field(name="📜 " + MESSAGES["auc_lbl_rights"], value=f"{self.auction_data['rights']}", inline=False)
-        main_embed.add_field(name="ℹ️ เพิ่มเติม " + MESSAGES["auc_lbl_extra"], value=f"{self.auction_data['extra_info']}", inline=False)
+        main_embed.add_field(name="ℹ️ " + MESSAGES["auc_lbl_extra"], value=f"{self.auction_data['extra_info']}", inline=False)
         
         main_embed.add_field(name="───────────────", value=f"⏰ **ปิดประมูล : <t:{timestamp}:R>**", inline=False)
         
@@ -318,9 +318,9 @@ class DenyModal(discord.ui.Modal, title=MESSAGES["auc_modal_deny_title"]):
         if self.auction_data["log_id"]:
             log_chan = self.cog.bot.get_channel(self.auction_data["log_id"])
             embed = discord.Embed(title=MESSAGES["auc_log_deny_title"], color=discord.Color.red())
-            embed.add_field(name="👤 ผู้ขาย", value=f"<@{self.auction_data['seller_id']}>", inline=True)
-            embed.add_field(name="👮 ปฏิเสธโดย", value=interaction.user.mention, inline=True)
-            embed.add_field(name="📝 เหตุผล", value=self.reason.value, inline=False)
+            embed.add_field(name="ผู้ขาย", value=f"<@{self.auction_data['seller_id']}>", inline=True)
+            embed.add_field(name="ปฏิเสธโดย", value=interaction.user.mention, inline=True)
+            embed.add_field(name="เหตุผล", value=self.reason.value, inline=False)
             embed.timestamp = datetime.datetime.now()
             await log_chan.send(embed=embed)
         await interaction.response.send_message(MESSAGES["auc_deny_msg"], ephemeral=True)
