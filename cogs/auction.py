@@ -80,14 +80,8 @@ class AuctionSystem(commands.Cog):
 
     @app_commands.command(name="auction", description=MESSAGES["desc_auction"])
     async def auction(self, interaction: discord.Interaction, category: discord.CategoryChannel, channel_send: discord.TextChannel, message: str, approval_channel: discord.TextChannel, role_ping: discord.Role, log_channel: discord.TextChannel = None, btn_text: str = None, img_link: str = None):
-        try:
-            await interaction.response.defer(ephemeral=True)
-        except:
-            return # Interaction died
-
-        if not is_admin_or_has_permission(interaction): 
-            return await interaction.followup.send(MESSAGES["no_permission"], ephemeral=True)
-        
+        if not is_admin_or_has_permission(interaction): return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
+        await interaction.response.defer(ephemeral=True)
         embed = discord.Embed(description=message, color=discord.Color.green())
         if img_link: embed.set_image(url=img_link)
         label = btn_text if btn_text else MESSAGES["auc_btn_default"]
@@ -170,7 +164,10 @@ class AuctionModalStep1(discord.ui.Modal, title=MESSAGES["auc_step1_title"]):
     start_price = discord.ui.TextInput(label=MESSAGES["auc_lbl_start"], placeholder=MESSAGES["auc_ph_start"], required=True)
     bid_step = discord.ui.TextInput(label=MESSAGES["auc_lbl_step"], placeholder=MESSAGES["auc_ph_step"], required=True)
     close_price = discord.ui.TextInput(label=MESSAGES["auc_lbl_close"], placeholder=MESSAGES["auc_ph_close"], required=True)
-    item_name = discord.ui.TextInput(label=MESSAGES["auc_lbl_item"], required=True)
+    
+    # [UPDATE] Change style to Paragraph for 'Item Name'
+    item_name = discord.ui.TextInput(label=MESSAGES["auc_lbl_item"], style=discord.TextStyle.paragraph, required=True)
+
     def __init__(self, category, approval_channel, role_ping, log_channel, cog):
         super().__init__()
         self.category, self.approval_channel, self.role_ping, self.log_channel = category, approval_channel, role_ping, log_channel
@@ -193,7 +190,7 @@ class Step2View(discord.ui.View):
 class AuctionModalStep2(discord.ui.Modal, title=MESSAGES["auc_step2_title"]):
     download_link = discord.ui.TextInput(label=MESSAGES["auc_lbl_link"], placeholder=MESSAGES["auc_ph_link"], required=True)
     rights = discord.ui.TextInput(label=MESSAGES["auc_lbl_rights"], placeholder=MESSAGES["auc_ph_rights"], required=True)
-    extra_info = discord.ui.TextInput(label=MESSAGES["auc_lbl_extra"], placeholder=MESSAGES["auc_ph_extra"], required=False)
+    extra_info = discord.ui.TextInput(label=MESSAGES["auc_lbl_extra"], placeholder=MESSAGES["auc_ph_extra"], required=False, style=discord.TextStyle.paragraph)
     end_time_str = discord.ui.TextInput(label=MESSAGES["auc_lbl_time"], placeholder=MESSAGES["auc_ph_time"], required=True)
     def __init__(self, auction_data, cog):
         super().__init__()
@@ -232,13 +229,14 @@ class AuctionModalStep2(discord.ui.Modal, title=MESSAGES["auc_step2_title"]):
                 base_embed = discord.Embed(title=MESSAGES["auc_embed_request_title"], color=discord.Color.gold())
                 
                 base_embed.add_field(name="👤 ผู้ขาย", value=f"<@{auction_data['seller_id']}>", inline=True)
-                base_embed.add_field(name="📦 สินค้า", value=f"**{auction_data['item_name']}**", inline=False)
+                # จัดให้ Item Name เป็นบรรทัดใหม่
+                base_embed.add_field(name="📦 สินค้า", value=auction_data['item_name'], inline=False) 
                 
-                base_embed.add_field(name=MESSAGES["auc_lbl_start"], value=f"`{auction_data['start_price']}`", inline=True)
-                base_embed.add_field(name=MESSAGES["auc_lbl_step"], value=f"`{auction_data['bid_step']}`", inline=True)
-                base_embed.add_field(name=MESSAGES["auc_lbl_close"], value=f"`{auction_data['close_price']}`", inline=True)
+                base_embed.add_field(name=MESSAGES["auc_lbl_start"], value=f"{auction_data['start_price']}", inline=True)
+                base_embed.add_field(name=MESSAGES["auc_lbl_step"], value=f"{auction_data['bid_step']}", inline=True)
+                base_embed.add_field(name=MESSAGES["auc_lbl_close"], value=f"{auction_data['close_price']}", inline=True)
                 
-                base_embed.add_field(name="⏱️ เวลา", value=f"`{auction_data['duration_minutes']} นาที`", inline=False)
+                base_embed.add_field(name="⏱️ เวลา", value=f"{auction_data['duration_minutes']} นาที", inline=False)
                 
                 base_embed.add_field(name=MESSAGES["auc_lbl_rights"], value=f"```\n{auction_data['rights']}\n```", inline=False)
                 base_embed.add_field(name=MESSAGES["auc_lbl_extra"], value=f"```\n{auction_data['extra_info']}\n```", inline=False)
@@ -279,16 +277,17 @@ class ApprovalView(discord.ui.View):
         main_embed.add_field(name="👤 ผู้เปิดประมูล", value=f"<@{self.auction_data['seller_id']}>", inline=True)
         main_embed.add_field(name="\u200b", value="\u200b", inline=True)
         
-        main_embed.add_field(name="📦 " + MESSAGES["auc_lbl_item"], value=f"**{self.auction_data['item_name']}**", inline=False)
+        # จัดให้ Item Name เป็นบรรทัดใหม่
+        main_embed.add_field(name="📦 สิ่งที่ได้ " + MESSAGES["auc_lbl_item"], value=f"**{self.auction_data['item_name']}**", inline=False)
         
-        main_embed.add_field(name="💰 " + MESSAGES["auc_lbl_start"], value=f"`{self.auction_data['start_price']}`", inline=True)
-        main_embed.add_field(name="📈 " + MESSAGES["auc_lbl_step"], value=f"`{self.auction_data['bid_step']}`", inline=True)
-        main_embed.add_field(name="⚡ " + MESSAGES["auc_lbl_close"], value=f"`{self.auction_data['close_price']}`", inline=True)
+        main_embed.add_field(name="💰 ราคาเริ่มต้น " + MESSAGES["auc_lbl_start"], value=f"`{self.auction_data['start_price']}`", inline=True)
+        main_embed.add_field(name="📈 บิดครั้งละ " + MESSAGES["auc_lbl_step"], value=f"`{self.auction_data['bid_step']}`", inline=True)
+        main_embed.add_field(name="🛎️ ราคาปิดประมูล " + MESSAGES["auc_lbl_close"], value=f"`{self.auction_data['close_price']}`", inline=True)
         
         main_embed.add_field(name="📜 " + MESSAGES["auc_lbl_rights"], value=f"{self.auction_data['rights']}", inline=False)
-        main_embed.add_field(name="ℹ️ " + MESSAGES["auc_lbl_extra"], value=f"{self.auction_data['extra_info']}", inline=False)
+        main_embed.add_field(name="ℹ️ เพิ่มเติม " + MESSAGES["auc_lbl_extra"], value=f"{self.auction_data['extra_info']}", inline=False)
         
-        main_embed.add_field(name="─────────────────", value=f"⏰ **ปิดประมูล : <t:{timestamp}:R>**", inline=False)
+        main_embed.add_field(name="───────────────", value=f"⏰ **ปิดประมูล : <t:{timestamp}:R>**", inline=False)
         
         files_to_send = await get_files_from_urls(self.auction_data["img_product_urls"])
         view = AuctionControlView(self.auction_data['seller_id'], self.cog)
