@@ -170,10 +170,9 @@ class AuctionSystem(commands.Cog):
         main_embed.add_field(name="ℹ️ " + MESSAGES["auc_lbl_extra"], value=f"{auction_data['extra_info']}", inline=False)
         
         # แสดงเวลาแบบ Relative Time
-        main_embed.add_field(name="───────────────", value=f"⏰ **ปิดประมูล : <t:{timestamp}:R>**", inline=False)
         
         if is_preview:
-            main_embed.title = "🔎 ตัวอย่างเมื่อเปิดประมูล (Preview)"
+            main_embed.title = "🔎 ตัวอย่างเมื่อเปิดประมูล"
             main_embed.set_footer(text="นี่คือตัวอย่างการแสดงผล ข้อมูลจริงจะปรากฏเมื่อแอดมินอนุมัติ")
 
         return main_embed
