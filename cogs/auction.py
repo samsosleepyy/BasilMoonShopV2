@@ -41,7 +41,7 @@ class AuctionSystem(commands.Cog):
             match = re.match(r'^(?:up|อัพ|บิด)\s*(\d+)', content, re.IGNORECASE)
             if match:
                 amount = int(match.group(1))
-                if amount > 99999: return 
+                if amount > 999999: return 
                 if message.author.id == auction_data['seller_id']: return
 
                 start_price = auction_data['start_price']
@@ -144,32 +144,32 @@ class AuctionSystem(commands.Cog):
         await channel.send(content=winner_mention, embed=embed, view=view)
 
     # ----------------------------------------------------
-    # สร้าง Embed ให้เหมือนตอนประมูลจริง (Preview)
+    # สร้าง Embed (รองรับทั้ง Preview และ ของจริง)
     # ----------------------------------------------------
-    async def create_final_style_embed(self, auction_data, is_preview=False):
-        # คำนวณเวลาปิดหลอกๆ เพื่อให้เห็นภาพ (Preview only)
-        duration = auction_data.get('duration_minutes', 60)
-        end_time = datetime.datetime.now() + datetime.timedelta(minutes=duration)
-        timestamp = int(end_time.timestamp())
+    async def create_final_style_embed(self, auction_data, is_preview=False, custom_end_timestamp=None):
+        if custom_end_timestamp:
+            timestamp = custom_end_timestamp
+        else:
+            # คำนวณเวลาปิดหลอกๆ (Preview)
+            duration = auction_data.get('duration_minutes', 60)
+            end_time = datetime.datetime.now() + datetime.timedelta(minutes=duration)
+            timestamp = int(end_time.timestamp())
         
-        # ใช้ Title และ สี เหมือนของจริง
         main_embed = discord.Embed(description=MESSAGES["auc_embed_title"], color=discord.Color.purple())
         
-        # ใส่ข้อมูลเหมือน ApprovalView.approve
         main_embed.add_field(name="👤 ผู้เปิดประมูล", value=f"<@{auction_data['seller_id']}>", inline=True)
         main_embed.add_field(name="\u200b", value="\u200b", inline=True)
-        
         main_embed.add_field(name="📦 " + MESSAGES["auc_lbl_item"], value=f"**{auction_data['item_name']}**", inline=False)
         
-        # เพิ่ม บ.-
         main_embed.add_field(name="💰 " + MESSAGES["auc_lbl_start"], value=f"`{auction_data['start_price']} บ.-`", inline=True)
         main_embed.add_field(name="📈 " + MESSAGES["auc_lbl_step"], value=f"`{auction_data['bid_step']} บ.-`", inline=True)
         main_embed.add_field(name="🛎️ " + MESSAGES["auc_lbl_close"], value=f"`{auction_data['close_price']} บ.-`", inline=True)
         
         main_embed.add_field(name="📜 " + MESSAGES["auc_lbl_rights"], value=f"{auction_data['rights']}", inline=False)
+        # [FIX] ข้อมูลเพิ่มเติมจะไม่หายแล้ว เพราะเราจัดลำดับ field ใหม่โดยไม่ใช้การ overwrite index
         main_embed.add_field(name="ℹ️ " + MESSAGES["auc_lbl_extra"], value=f"{auction_data['extra_info']}", inline=False)
         
-        # แสดงเวลาแบบ Relative Time
+        main_embed.add_field(name="───────────────", value=f"⏰ **ปิดประมูล : <t:{timestamp}:R>**", inline=False)
         
         if is_preview:
             main_embed.title = "🔎 ตัวอย่างเมื่อเปิดประมูล"
@@ -177,9 +177,7 @@ class AuctionSystem(commands.Cog):
 
         return main_embed
 
-    # ฟังก์ชันส่ง/อัปเดต Preview
     async def send_user_preview(self, channel, auction_data, old_preview_msg=None):
-        # ลบข้อความเก่าทิ้งก่อน (ถ้ามี)
         if old_preview_msg:
             try: await old_preview_msg.delete()
             except: pass
@@ -191,25 +189,21 @@ class AuctionSystem(commands.Cog):
         msg = await channel.send(embed=embed, files=files_to_send, view=view)
         return msg
 
-    # Loop รับรูปภาพ
     async def wait_for_images(self, channel, user, auction_data, is_edit=False):
         def check_product(m): 
             return m.author.id == user.id and m.channel.id == channel.id and m.attachments
 
         try:
-            # 1. รับรูปสินค้า
             await channel.send(MESSAGES["auc_wait_img_1"].format(user=user.mention))
             msg1 = await self.bot.wait_for('message', check=check_product, timeout=300)
             auction_data["img_product_urls"] = [att.url for att in msg1.attachments]
             
-            # 2. รับ QR Code
             await channel.send(MESSAGES["auc_wait_img_2"])
             while True:
                 msg2 = await self.bot.wait_for('message', timeout=300)
                 if msg2.author.id != user.id or msg2.channel.id != channel.id: continue
                 if not msg2.attachments: continue
                 
-                # Check 1 รูป และเป็นภาพ
                 if len(msg2.attachments) > 1:
                     await channel.send("⚠️ กรุณาส่ง QR Code เพียง **1 รูป** เท่านั้นครับ", delete_after=10)
                     continue
@@ -221,8 +215,6 @@ class AuctionSystem(commands.Cog):
                 break
 
             await channel.send(MESSAGES["auc_img_received"])
-            
-            # ส่ง Preview
             await self.send_user_preview(channel, auction_data)
 
         except asyncio.TimeoutError:
@@ -252,7 +244,6 @@ class AuctionModalStep1(discord.ui.Modal, title=MESSAGES["auc_step1_title"]):
         self.default_data = default_data
         self.preview_msg = preview_msg
 
-        # [FIX] ต้องแปลงเป็น str() ให้หมด ไม่งั้น Modal จะ Error เปิดไม่ขึ้น
         d_start = str(default_data['start_price']) if default_data else ""
         d_step = str(default_data['bid_step']) if default_data else ""
         d_close = str(default_data['close_price']) if default_data else ""
@@ -271,18 +262,15 @@ class AuctionModalStep1(discord.ui.Modal, title=MESSAGES["auc_step1_title"]):
     async def on_submit(self, interaction: discord.Interaction):
         try:
             if self.default_data:
-                # โหมดแก้ไข: อัปเดตข้อมูลและรีเฟรช Preview
                 self.default_data.update({
                     "start_price": int(self.start_price.value),
                     "bid_step": int(self.bid_step.value),
                     "close_price": int(self.close_price.value),
                     "item_name": self.item_name.value
                 })
-                # [FIX] Defer ก่อน เพื่อกัน Timeout และลบปุ่มเก่าออก
                 await interaction.response.defer()
                 await self.cog.send_user_preview(interaction.channel, self.default_data, self.preview_msg)
             else:
-                # โหมดสร้างใหม่
                 auction_data = {"start_price": int(self.start_price.value),"bid_step": int(self.bid_step.value),"close_price": int(self.close_price.value),"item_name": self.item_name.value,"category_id": self.category.id,"approval_id": self.approval_channel.id,"role_ping_id": self.role_ping.id,"log_id": self.log_channel.id if self.log_channel else None}
                 view = Step2View(auction_data, self.cog)
                 await interaction.response.send_message(MESSAGES["auc_prompt_step2"], view=view, ephemeral=True)
@@ -307,7 +295,6 @@ class AuctionModalStep2(discord.ui.Modal, title=MESSAGES["auc_step2_title"]):
         d_link = str(auction_data.get("download_link", ""))
         d_rights = str(auction_data.get("rights", ""))
         d_extra = str(auction_data.get("extra_info", "-"))
-        
         d_time = ""
         if "duration_minutes" in auction_data:
             h = auction_data["duration_minutes"] // 60
@@ -364,11 +351,10 @@ class PreviewView(discord.ui.View):
     async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         
-        # ส่งไปหา Admin
         approval_channel = self.cog.bot.get_channel(self.auction_data["approval_id"])
         if approval_channel:
-            # ใช้ Embed แบบ Final Style แต่เปลี่ยน Title นิดหน่อย
-            base_embed = await self.cog.create_final_style_embed(self.auction_data)
+            # ใช้ Embed แบบของจริงแต่เปลี่ยน Title
+            base_embed = await self.cog.create_final_style_embed(self.auction_data, is_preview=False)
             base_embed.title = MESSAGES["auc_embed_request_title"]
             base_embed.color = discord.Color.gold()
             
@@ -377,13 +363,11 @@ class PreviewView(discord.ui.View):
             await approval_channel.send(embed=base_embed, files=files_to_send, view=view)
         
         await interaction.followup.send("ส่งคำขอให้แอดมินเรียบร้อยแล้วครับ! โปรดรอการอนุมัติ", ephemeral=True)
-        # ปิดปุ่ม
         for child in self.children: child.disabled = True
         await interaction.message.edit(view=self)
 
     @discord.ui.button(label="✏️ แก้ไข", style=discord.ButtonStyle.primary)
     async def edit(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # เปลี่ยนเป็น 3 ปุ่ม
         view = EditSelectionView(self.auction_data, self.temp_channel, self.cog, interaction.message)
         await interaction.response.edit_message(view=view)
 
@@ -405,11 +389,10 @@ class EditSelectionView(discord.ui.View):
     @discord.ui.button(label="แก้ไขรูปภาพ", style=discord.ButtonStyle.secondary)
     async def edit_images(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message("กรุณาส่งรูปสินค้าใหม่ และตามด้วยรูป QR Code ใหม่ครับ", ephemeral=True)
-        try: await self.message.delete() # ลบ Preview เดิมทิ้ง
+        try: await self.message.delete()
         except: pass
         self.cog.bot.loop.create_task(self.cog.wait_for_images(self.temp_channel, interaction.user, self.auction_data, is_edit=True))
 
-# --- Admin View (คงเดิม) ---
 class ApprovalView(discord.ui.View):
     def __init__(self, auction_data, temp_channel, cog):
         super().__init__(timeout=None)
@@ -430,21 +413,31 @@ class ApprovalView(discord.ui.View):
         ping_role = interaction.guild.get_role(self.auction_data["role_ping_id"])
         if ping_role: await auction_channel.send(ping_role.mention, delete_after=5)
         
-        # ใช้ฟังก์ชันสร้าง Embed เดียวกันเพื่อให้เหมือน Preview เป๊ะ
-        main_embed = await self.cog.create_final_style_embed(self.auction_data, is_preview=False)
-        
-        # ต้อง Recalculate end_time จริงๆ ณ เวลาที่กดอนุมัติ
+        # คำนวณเวลาจบจริง
         end_time = datetime.datetime.now() + datetime.timedelta(minutes=self.auction_data["duration_minutes"])
         timestamp = int(end_time.timestamp())
-        # อัปเดตเวลาใน Embed
-        main_embed.set_field_at(7, name="───────────────", value=f"⏰ **ปิดประมูล : <t:{timestamp}:R>**", inline=False)
+        
+        # สร้าง Embed สมบูรณ์โดยส่งเวลาจริงเข้าไปเลย
+        main_embed = await self.cog.create_final_style_embed(self.auction_data, is_preview=False, custom_end_timestamp=timestamp)
 
+        # 1. ส่ง Embed ข้อมูลก่อน
+        embed_msg = await auction_channel.send(embed=main_embed)
+
+        # 2. ส่งรูปภาพ + ปุ่ม (เพื่อให้ปุ่มอยู่ใต้รูป)
         files_to_send = await get_files_from_urls(self.auction_data["img_product_urls"])
         view = AuctionControlView(self.auction_data['seller_id'], self.cog)
-        msg = await auction_channel.send(embed=main_embed, view=view)
-        if files_to_send: await auction_channel.send(files=files_to_send)
         
-        self.auction_data.update({'channel_id': auction_channel.id, 'current_price': self.auction_data['start_price'],'end_time': end_time, 'winner_id': None, 'message_id': msg.id, 'active': True, 'last_bid_msg_id': None})
+        if files_to_send:
+            await auction_channel.send(files=files_to_send, view=view)
+            # เก็บ msg id ของ embed หรือ ของปุ่ม? ปกติระบบบอทนี้เก็บ id เพื่อลบ/แก้ไข
+            # เก็บ id ของ embed ไว้ใน message_id หลักดีกว่า
+            msg_id = embed_msg.id
+        else:
+            # กรณีไม่มีรูป (ซึ่งไม่น่าเกิด) ให้แปะปุ่มที่ embed
+            await embed_msg.edit(view=view)
+            msg_id = embed_msg.id
+        
+        self.auction_data.update({'channel_id': auction_channel.id, 'current_price': self.auction_data['start_price'],'end_time': end_time, 'winner_id': None, 'message_id': msg_id, 'active': True, 'last_bid_msg_id': None})
         self.cog.active_auctions[auction_channel.id] = self.auction_data
         
         await interaction.followup.send(MESSAGES["auc_admin_approve_log"].format(channel=auction_channel.mention))
