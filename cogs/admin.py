@@ -5,8 +5,11 @@ import sys
 import os
 import datetime
 import asyncio
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import MESSAGES, load_data, save_data, is_admin_or_has_permission, is_support_or_admin, init_guild_data
+
+# [เพิ่ม] DATA_FILE เข้าไปใน import เพื่อใช้ระบุตำแหน่งไฟล์
+from config import MESSAGES, load_data, save_data, is_admin_or_has_permission, is_support_or_admin, init_guild_data, DATA_FILE
 
 class AdminSystem(commands.Cog):
     def __init__(self, bot):
@@ -112,7 +115,6 @@ class AdminSystem(commands.Cog):
         except Exception as e:
             print(f"Anti-Raid Error: {e}")
 
-    # ... (คำสั่งอื่นๆ คงเดิม) ...
     @app_commands.command(name="addadmin", description=MESSAGES["desc_addadmin"])
     async def addadmin(self, interaction: discord.Interaction, target: discord.User | discord.Role):
         await interaction.response.defer(ephemeral=True)
@@ -205,6 +207,42 @@ class AdminSystem(commands.Cog):
         data["points"][str_id] = new_bal
         save_data(data)
         await interaction.followup.send(f"{MESSAGES['pt_remove_success'].format(amount=amount, user=user.mention)} ({MESSAGES['pt_current'].format(points=new_bal)})", ephemeral=True)
+
+    # =========================================
+    # 📥 ระบบ BACKUP & RESTORE
+    # =========================================
+    
+    @app_commands.command(name="backup", description="สำรองข้อมูล data.json (โหลดเก็บไว้กันหาย)")
+    async def backup(self, interaction: discord.Interaction):
+        if not is_admin_or_has_permission(interaction): 
+            return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        if os.path.exists(DATA_FILE):
+            file = discord.File(DATA_FILE, filename="data.json")
+            await interaction.followup.send("📦 **ไฟล์ Backup ข้อมูลปัจจุบัน**\nโปรดโหลดเก็บไว้ในคอมพิวเตอร์\nหากข้อมูลหายสามารถใช้คำสั่ง `/restore` เพื่อกู้คืนได้", file=file, ephemeral=True)
+        else:
+            await interaction.followup.send("❌ ไม่พบไฟล์ข้อมูล (Database ยังไม่ถูกสร้าง)", ephemeral=True)
+
+    @app_commands.command(name="restore", description="กู้คืนข้อมูลจากไฟล์ data.json")
+    @app_commands.describe(file="ไฟล์ data.json ที่ต้องการกู้คืน")
+    async def restore(self, interaction: discord.Interaction, file: discord.Attachment):
+        if not is_admin_or_has_permission(interaction): 
+            return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
+        
+        # เช็คว่าเป็นไฟล์ .json หรือไม่
+        if not file.filename.endswith(".json"):
+            return await interaction.response.send_message("❌ โปรดอัปโหลดไฟล์ .json เท่านั้น", ephemeral=True)
+            
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            # บันทึกไฟล์ทับของเดิม
+            await file.save(DATA_FILE)
+            await interaction.followup.send(f"✅ **กู้คืนข้อมูลสำเร็จ!**\nขนาดไฟล์: {file.size} bytes\nข้อมูลถูกบันทึกลงระบบแล้ว", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"❌ เกิดข้อผิดพลาดในการกู้คืน: {e}", ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(AdminSystem(bot))
