@@ -30,7 +30,7 @@ class SelectSystem(commands.Cog):
         view = SelectSetupView(interaction.user.id)
         await interaction.response.send_message(MESSAGES["sel_setup_msg"], view=view, ephemeral=True)
 
-    @app_commands.command(name="edit-sm", description="แก้ไขตัวเลือกใน Select Menu เดิม (เพิ่ม/ลบ/กู้คืน)")
+    @app_commands.command(name="edit-sm", description="แก้ไขตัวเลือกใน Select Menu เดิม (เพิ่ม/ลบ)")
     async def edit_sm(self, interaction: discord.Interaction, message_link: str):
         if not is_admin_or_has_permission(interaction):
             return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
@@ -45,28 +45,22 @@ class SelectSystem(commands.Cog):
             return await interaction.response.send_message("❌ ลิ้งค์ข้อความไม่ถูกต้อง", ephemeral=True)
         
         data = load_data()
+        if str(msg_id) not in data["select_menus"]:
+            return await interaction.response.send_message("❌ ไม่พบข้อมูล Select Menu นี้ในฐานข้อมูล", ephemeral=True)
         
-        # [UPDATED] ตรวจสอบว่ามีข้อมูลหรือไม่ (รองรับ Render Reset)
-        if str(msg_id) in data["select_menus"]:
-            # กรณีข้อมูลยังอยู่ (ปกติ)
-            current_options = data["select_menus"][str(msg_id)]
-            msg_content = f"🛠️ **แก้ไข Select Menu**\n🔗 {message_link}\n(🟢=มีข้อมูล, ⚫=ว่าง)"
-        else:
-            # กรณีข้อมูลหาย (Render รีเซ็ต) -> ให้เริ่มใหม่แบบว่างเปล่าเพื่อกู้คืน
-            current_options = []
-            msg_content = f"⚠️ **ไม่พบข้อมูลเดิม (หรือข้อมูลหายจากการ Deploy)**\nระบบจะเปิดให้คุณตั้งค่าใหม่ทับโพสต์เดิมครับ\n🔗 {message_link}\n(กรุณากรอกข้อมูลใหม่ แล้วกดบันทึกเพื่อให้เมนูกลับมาทำงาน)"
-
+        current_options = data["select_menus"][str(msg_id)]
+        
         # 2. โหลดข้อมูลเข้า Cache
         setup_cache[interaction.user.id] = {
             "mode": "edit",
             "target_message_id": msg_id,
             "target_channel_id": chan_id,
-            "options": current_options # ใช้ข้อมูลเดิม หรือ ลิสต์ว่างถ้ากู้คืน
+            "options": current_options # ก๊อปปี้ข้อมูลเดิมมา
         }
         
         # 3. สร้าง View โดยปุ่มไหนมีข้อมูลให้เป็นสีเขียว
         view = SelectEditView(interaction.user.id, current_options)
-        await interaction.response.send_message(msg_content, view=view, ephemeral=True)
+        await interaction.response.send_message(f"🛠️ **แก้ไข Select Menu**\n🔗 {message_link}\n(🟢=มีข้อมูล, ⚫=ว่าง)", view=view, ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(SelectSystem(bot))
@@ -126,7 +120,7 @@ class SelectSetupView(discord.ui.View):
 
 
 # =========================================
-# 2. EDIT VIEW (UPDATE / REVIVE)
+# 2. EDIT VIEW (UPDATE)
 # =========================================
 class SelectEditView(discord.ui.View):
     def __init__(self, user_id, current_options):
@@ -168,16 +162,14 @@ class SelectEditView(discord.ui.View):
         
         # ดึง Message เดิมมาแก้
         try:
-            channel = interaction.guild.get_channel(cache["target_channel_id"]) 
-            if not channel: channel = await interaction.guild.fetch_channel(cache["target_channel_id"])
-            
+            channel = interaction.guild.get_channel(cache["target_channel_id"]) or await interaction.guild.fetch_channel(cache["target_channel_id"])
             msg = await channel.fetch_message(cache["target_message_id"])
         except:
-            return await interaction.followup.send("❌ ไม่พบข้อความต้นฉบับ (อาจถูกลบหรือบอทอ่านห้องไม่ได้)", ephemeral=True)
+            return await interaction.followup.send("❌ ไม่พบข้อความต้นฉบับ (อาจถูกลบไปแล้ว)", ephemeral=True)
         
         sorted_options = sorted(cache["options"], key=lambda x: x['index'])
         
-        # อัปเดต View ใหม่ (นี่คือขั้นตอนที่ทำให้เมนูเก่ากลับมาใช้ได้)
+        # อัปเดต View ใหม่
         view = SelectMenuMainView(sorted_options)
         await msg.edit(view=view)
         
@@ -186,7 +178,7 @@ class SelectEditView(discord.ui.View):
         data["select_menus"][str(msg.id)] = sorted_options
         save_data(data)
         
-        await interaction.followup.send("✅ บันทึกและกู้คืนเมนูเรียบร้อย!", ephemeral=True)
+        await interaction.followup.send("✅ บันทึกการแก้ไขเรียบร้อย!", ephemeral=True)
         del setup_cache[self.user_id]
 
 
@@ -234,10 +226,10 @@ class SelectOptionModal(discord.ui.Modal):
         
         await interaction.response.edit_message(view=self.parent_view)
 
-# Modal สำหรับ "แก้ไข/กู้คืน" (ดึงข้อมูลเดิมมาใส่ + ลบได้)
+# Modal สำหรับ "แก้ไข" (ดึงข้อมูลเดิมมาใส่ + ลบได้)
 class SelectEditOptionModal(discord.ui.Modal):
     def __init__(self, user_id, index, parent_view):
-        super().__init__(title=f"แก้ไขตัวเลือกที่ {index+1}")
+        super().__init__(title=f"แก้ไข/ลบ ตัวเลือกที่ {index+1}")
         self.user_id = user_id
         self.index = index
         self.parent_view = parent_view
@@ -246,16 +238,16 @@ class SelectEditOptionModal(discord.ui.Modal):
         cache = setup_cache.get(user_id)
         old_data = next((o for o in cache["options"] if o["index"] == index), None)
         
-        # ตั้งค่า Default (ถ้ามีของเดิมก็ใส่ไป ถ้าไม่มีก็ว่างไว้)
+        # ตั้งค่า Default (ถ้ามีของเดิมก็ใส่ไป)
         d_lbl = old_data["label"] if old_data else ""
         d_desc = old_data.get("description", "") if old_data else ""
         d_content = old_data["content"] if old_data else ""
         d_img = old_data.get("image", "") if old_data else ""
 
-        # Note: required=False เพื่อให้ลบข้อความได้ (การลบชื่อ = ลบตัวเลือก)
+        # Note: required=False เพื่อให้ลบข้อความได้ (การลบข้อความ = ลบตัวเลือก)
         self.lbl = discord.ui.TextInput(label="ชื่อตัวเลือก (ลบให้ว่างเพื่อลบปุ่ม)", default=d_lbl, required=False)
         self.desc = discord.ui.TextInput(label="คำอธิบาย", default=d_desc, required=False)
-        self.content = discord.ui.TextInput(label="เนื้อหา (แสดงเมื่อกด)", style=discord.TextStyle.paragraph, default=d_content, required=False)
+        self.content = discord.ui.TextInput(label="เนื้อหา", style=discord.TextStyle.paragraph, default=d_content, required=False)
         self.img = discord.ui.TextInput(label="ลิ้งค์รูปภาพ", default=d_img, required=False)
         
         self.add_item(self.lbl)
@@ -267,9 +259,9 @@ class SelectEditOptionModal(discord.ui.Modal):
         cache = setup_cache.get(self.user_id)
         if not cache: return
         
-        # เช็คว่าผู้ใช้ลบข้อมูลออกหมดหรือไม่ (หรือส่งมาว่างๆ)
+        # เช็คว่าผู้ใช้ลบข้อมูลออกหมดหรือไม่
         if not self.lbl.value.strip():
-            # === กรณีลบตัวเลือก ===
+            # === กรณีลบ ===
             # เอาออกจาก List
             cache["options"] = [opt for opt in cache["options"] if opt["index"] != self.index]
             
@@ -279,11 +271,7 @@ class SelectEditOptionModal(discord.ui.Modal):
                     child.style = discord.ButtonStyle.secondary
                     break
         else:
-            # === กรณีเพิ่ม/แก้ไขตัวเลือก ===
-            if not self.content.value.strip():
-                 # ถ้ามีชื่อแต่ไม่มีเนื้อหา กันไว้หน่อย
-                 return await interaction.response.send_message("❌ ต้องใส่เนื้อหา (Content) ด้วยครับ", ephemeral=True)
-
+            # === กรณีเพิ่ม/แก้ไข ===
             new_option = {
                 "index": self.index,
                 "label": self.lbl.value,
@@ -333,7 +321,7 @@ class SelectMenuMainView(discord.ui.View):
         selected_data = next((item for item in self.options_data if item["index"] == selected_idx), None)
         
         if not selected_data:
-            return await interaction.response.send_message("❌ ข้อมูลผิดพลาด (ลองใช้ /edit-sm เพื่อรีเฟรชเมนูนี้ดูครับ)", ephemeral=True)
+            return await interaction.response.send_message("❌ ข้อมูลผิดพลาด", ephemeral=True)
             
         embed = discord.Embed(
             title=MESSAGES["sel_response_title"].format(label=selected_data["label"]),
