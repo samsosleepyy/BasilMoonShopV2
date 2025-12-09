@@ -14,15 +14,24 @@ class MyBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents, help_command=None)
 
     async def setup_hook(self):
+        # [UPDATED] เพิ่ม try-except เพื่อกันบอทล่มถ้าโค้ดไฟล์ไหนพัง
         for filename in os.listdir('./cogs'):
             if filename.endswith('.py'):
-                await self.load_extension(f'cogs.{filename[:-3]}')
-        await self.tree.sync()
-        print("Commands synced! Cogs loaded.")
+                try:
+                    await self.load_extension(f'cogs.{filename[:-3]}')
+                    print(f"✅ Loaded extension: {filename}")
+                except Exception as e:
+                    print(f"❌ Failed to load extension {filename}: {e}")
+        
+        try:
+            await self.tree.sync()
+            print("🔄 Commands synced!")
+        except Exception as e:
+            print(f"⚠️ Failed to sync commands: {e}")
 
     # 🛑 GLOBAL CHECK: ระบบคัดกรองเซิฟเวอร์
     async def interaction_check(self, interaction: discord.Interaction):
-        # 1. อนุญาตให้ Owner ใช้งานได้เสมอ (ไม่สน Whitelist)
+        # 1. อนุญาตให้ Owner ใช้งานได้เสมอ
         if is_owner(interaction):
             return True
             
@@ -32,14 +41,14 @@ class MyBot(commands.Bot):
         
         # ถ้า ID เซิฟเวอร์ไม่อยู่ในรายการ -> บล็อก
         if str(interaction.guild_id) not in whitelist:
-            await interaction.response.send_message(MESSAGES["whitelist_only"], ephemeral=True)
+            await interaction.response.send_message(MESSAGES.get("whitelist_only", "🔒 Restricted Access"), ephemeral=True)
             return False
             
         return True
 
 bot = MyBot()
 
-# ผูก Check เข้ากับ Tree (เพื่อให้ทำงานกับ Slash Command)
+# ผูก Check เข้ากับ Tree
 bot.tree.interaction_check = bot.interaction_check
 
 keep_alive()
