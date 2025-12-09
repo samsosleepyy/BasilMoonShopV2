@@ -17,10 +17,8 @@ class TicketSystem(commands.Cog):
         await self.bot.wait_until_ready()
         print("🔄 Restoring Ticket Views...")
         
-        # 1. กู้คืนปุ่ม "สั่งซื้อ" (Global Persistent View)
         self.bot.add_view(TicketForumView())
         
-        # 2. กู้คืนปุ่มในห้องตั๋วที่ยังเปิดอยู่
         data = load_data()
         count = 0
         if "active_tickets" in data:
@@ -34,7 +32,7 @@ class TicketSystem(commands.Cog):
                         info["forum_msg_id"], 
                         info["count"]
                     )
-                    self.bot.add_view(view) # ไม่ต้องใส่ message_id เพราะปุ่มจะ active ในห้องนั้นๆ เอง
+                    self.bot.add_view(view)
                     count += 1
                 except Exception as e:
                     print(f"Failed to restore ticket control view {channel_id}: {e}")
@@ -104,7 +102,6 @@ class TicketForumView(discord.ui.View):
         view = TicketControlView(interaction.channel.id, conf["log_id"], interaction.user.id, interaction.channel.owner_id, interaction.message.id, count)
         await ticket_chan.send(msg, view=view)
 
-        # [NEW] บันทึก Active Ticket ลง DB เพื่อให้กู้คืนได้
         if "active_tickets" not in data: data["active_tickets"] = {}
         data["active_tickets"][str(ticket_chan.id)] = {
             "forum_thread_id": interaction.channel.id,
@@ -141,6 +138,7 @@ class ReportModal(discord.ui.Modal, title=MESSAGES["tf_modal_report_title"]):
             embed.add_field(name="📝 เหตุผล", value=self.reason.value, inline=False)
             embed.timestamp = datetime.datetime.now()
             await log.send(embed=embed)
+        # [FIXED] แก้ชื่อ Key ให้ตรงกับ Config
         await interaction.response.send_message(MESSAGES["tf_msg_report_success"], ephemeral=True)
 
 class TicketControlView(discord.ui.View):
@@ -205,7 +203,6 @@ class TicketCancelModal(discord.ui.Modal, title=MESSAGES["tf_modal_cancel_title"
         
         await interaction.response.send_message(f"ยกเลิกโดย {interaction.user.mention}\nเหตุผล: {self.reason.value}")
         
-        # [NEW] ลบ Active Ticket ออกจาก DB เพราะจบงานแล้ว
         data = load_data()
         if "active_tickets" in data and str(interaction.channel_id) in data["active_tickets"]:
             del data["active_tickets"][str(interaction.channel_id)]
@@ -247,7 +244,6 @@ class AdminCloseView(discord.ui.View):
                 if thread: await thread.delete()
             except: pass
         
-        # [NEW] ลบ Active Ticket ออกจาก DB
         data = load_data()
         if "active_tickets" in data and str(interaction.channel_id) in data["active_tickets"]:
             del data["active_tickets"][str(interaction.channel_id)]
@@ -258,7 +254,6 @@ class AdminCloseView(discord.ui.View):
         if not is_support_or_admin(interaction): return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
         await interaction.channel.delete()
         
-        # [NEW] ลบ Active Ticket ออกจาก DB
         data = load_data()
         if "active_tickets" in data and str(interaction.channel_id) in data["active_tickets"]:
             del data["active_tickets"][str(interaction.channel_id)]
