@@ -5,6 +5,7 @@ import sys
 import os
 import datetime
 import asyncio
+import io
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -49,12 +50,62 @@ class AdminSystem(commands.Cog):
             print(f"Auto-backup loop error: {e}")
 
     # =========================================
-    # 🔒 WHITELIST & RESTORE (OWNER ONLY)
+    # 🔒 OWNER ONLY COMMANDS
     # =========================================
+
+    @app_commands.command(name="bot-info", description="[Owner Only] ดูข้อมูลบอทและรายชื่อเซิฟเวอร์ทั้งหมด")
+    async def bot_info(self, interaction: discord.Interaction):
+        # [CHECK] ตรวจสอบว่าเป็น Owner หรือไม่ (คนอื่นใช้ไม่ได้)
+        if not is_owner(interaction):
+            return await interaction.response.send_message(MESSAGES["owner_only"], ephemeral=True)
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        guilds = self.bot.guilds
+        total_guilds = len(guilds)
+        total_members = sum(g.member_count for g in guilds)
+        
+        details = []
+        
+        for guild in guilds:
+            invite_url = "❌ บอทไม่มีสิทธิ์สร้างลิ้งค์"
+            # 1. หาลิ้งค์เดิม
+            try:
+                invites = await guild.invites()
+                if invites:
+                    target_invite = next((inv for inv in invites if inv.max_age == 0), invites[0])
+                    invite_url = target_invite.url
+            except: pass
+                
+            # 2. สร้างลิ้งค์ใหม่
+            if invite_url.startswith("❌"):
+                try:
+                    target_channel = next((c for c in guild.text_channels if c.permissions_for(guild.me).create_instant_invite), None)
+                    if target_channel:
+                        invite = await target_channel.create_invite(max_age=0, max_uses=0, reason="Bot Owner Requested Info")
+                        invite_url = invite.url
+                except: pass
+            
+            details.append(f"• **{guild.name}** (`{guild.id}`)\n   👑 เจ้าของ: {guild.owner} | 👥 สมาชิก: {guild.member_count}\n   🔗 {invite_url}")
+
+        embed = discord.Embed(title="🤖 ข้อมูลบอท (Bot Information)", color=discord.Color.blue())
+        embed.set_thumbnail(url=self.bot.user.display_avatar.url)
+        embed.add_field(name="📊 สถิติรวม", value=f"🏢 จำนวนเซิฟเวอร์: `{total_guilds}`\n👤 สมาชิกทั้งหมด: `{total_members}`", inline=False)
+        
+        server_list_str = "\n\n".join(details)
+        
+        if len(server_list_str) > 3800:
+            with io.StringIO(server_list_str) as f:
+                file = discord.File(f, filename="server_list.txt")
+                embed.description = "📜 **รายชื่อเซิฟเวอร์**\n*(ข้อมูลมีจำนวนมาก ระบบได้แนบไฟล์ Text มาให้แทนครับ)*"
+                await interaction.followup.send(embed=embed, file=file, ephemeral=True)
+        else:
+            embed.description = f"📜 **รายชื่อเซิฟเวอร์**\n\n{server_list_str}"
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="whitelist", description="[Owner Only] อนุญาตให้เซิฟเวอร์ใช้บอทได้")
     async def whitelist(self, interaction: discord.Interaction, server_id: str):
-        # เช็คว่าเป็น Owner หรือไม่
+        # [CHECK] Owner Only
         if not is_owner(interaction):
             return await interaction.response.send_message(MESSAGES["owner_only"], ephemeral=True)
         
@@ -71,7 +122,7 @@ class AdminSystem(commands.Cog):
     @app_commands.command(name="restore", description="[Owner Only] กู้คืนข้อมูลจากไฟล์ data.json")
     @app_commands.describe(file="ไฟล์ data.json ที่ต้องการกู้คืน")
     async def restore(self, interaction: discord.Interaction, file: discord.Attachment):
-        # [UPDATED] แก้ให้เป็น Owner Only
+        # [CHECK] Owner Only
         if not is_owner(interaction):
             return await interaction.response.send_message(MESSAGES["owner_only"], ephemeral=True)
         
@@ -83,8 +134,6 @@ class AdminSystem(commands.Cog):
         try:
             await file.save(DATA_FILE)
             load_data() 
-            
-            # เรียกใช้ Hook ของ QueueSystem เพื่อกู้คืน Google Sheets Connection (ถ้ามี)
             queue_cog = self.bot.get_cog("QueueSystem")
             if queue_cog:
                 await queue_cog.restore_queue_system()
@@ -94,7 +143,7 @@ class AdminSystem(commands.Cog):
             await interaction.followup.send(f"❌ เกิดข้อผิดพลาดในการกู้คืน: {e}", ephemeral=True)
 
     # =========================================
-    # COMMANDS
+    # COMMANDS (Admin Permission)
     # =========================================
 
     @app_commands.command(name="backup", description="สำรองข้อมูล data.json")
@@ -126,7 +175,6 @@ class AdminSystem(commands.Cog):
             file = discord.File(DATA_FILE, filename=filename)
             await interaction.followup.send("📦 **ไฟล์ Backup ข้อมูลปัจจุบัน**", file=file, ephemeral=True)
 
-    # ... (Anti-raid, addadmin และคำสั่งอื่นๆ คงเดิม ไม่ต้องแก้) ...
     @app_commands.command(name="anti-raid", description=MESSAGES["desc_antiraid"])
     async def antiraid(self, interaction: discord.Interaction, status: bool, log_channel: discord.TextChannel):
         await interaction.response.defer(ephemeral=True)
@@ -140,8 +188,56 @@ class AdminSystem(commands.Cog):
 
     @commands.Cog.listener()
     async def on_webhooks_update(self, channel):
-        # (Anti-raid logic เดิม)
-        pass 
+        guild = channel.guild
+        data = load_data()
+        guild_id = str(guild.id)
+        if "guilds" not in data or guild_id not in data["guilds"]: return
+        ar_config = data["guilds"][guild_id].get("antiraid", {"status": False})
+        if not ar_config["status"]: return
+        try:
+            async for entry in guild.audit_logs(limit=1, action=discord.AuditLogAction.webhook_create):
+                if (datetime.datetime.now(datetime.timezone.utc) - entry.created_at).total_seconds() > 10: return
+                user = entry.user
+                if user.bot: return 
+                is_authorized = False
+                if user.guild_permissions.administrator: is_authorized = True
+                if user.id in data["admins"]: is_authorized = True
+                for role in user.roles:
+                    if role.id in data["admins"]: is_authorized = True
+                log_chan_id = ar_config.get("log_channel")
+                log_chan = guild.get_channel(log_chan_id) if log_chan_id else None
+                if is_authorized:
+                    if log_chan:
+                        embed = discord.Embed(title=MESSAGES["ar_log_title_safe"], description=MESSAGES["ar_log_desc_safe"], color=discord.Color.green())
+                        embed.add_field(name=MESSAGES["ar_field_user"], value=MESSAGES["ar_val_user"].format(mention=user.mention, id=user.id), inline=True)
+                        embed.add_field(name=MESSAGES["ar_field_webhook"], value=MESSAGES["ar_val_webhook"].format(name=entry.target.name, id=entry.target.id), inline=True)
+                        embed.add_field(name=MESSAGES["ar_field_action"], value=MESSAGES["ar_action_safe"], inline=False)
+                        embed.timestamp = datetime.datetime.now()
+                        await log_chan.send(embed=embed)
+                else:
+                    webhook = entry.target
+                    try: await webhook.delete(reason="Anti-Raid: Unauthorized creation")
+                    except: pass
+                    try: await channel.set_permissions(user, manage_webhooks=False, reason="Anti-Raid: Blocked user")
+                    except: pass
+                    if log_chan:
+                        pings = []
+                        for admin_id in data["admins"]:
+                            if guild.get_role(admin_id): pings.append(f"<@&{admin_id}>")
+                            else: pings.append(f"<@{admin_id}>")
+                        for sup_id in data["supports"]:
+                            if guild.get_role(sup_id): pings.append(f"<@&{sup_id}>")
+                            else: pings.append(f"<@{sup_id}>")
+                        ping_str = " ".join(pings) if pings else "@here"
+                        embed = discord.Embed(title=MESSAGES["ar_log_title"], description=MESSAGES["ar_log_desc"], color=discord.Color.red())
+                        embed.add_field(name=MESSAGES["ar_field_user"], value=MESSAGES["ar_val_user"].format(mention=user.mention, id=user.id), inline=True)
+                        embed.add_field(name=MESSAGES["ar_field_webhook"], value=MESSAGES["ar_val_webhook"].format(name=webhook.name, id=webhook.id), inline=True)
+                        embed.add_field(name=MESSAGES["ar_field_action"], value=MESSAGES["ar_action_taken"], inline=False)
+                        embed.timestamp = datetime.datetime.now()
+                        await log_chan.send(content=MESSAGES["ar_ping_msg"].format(mentions=ping_str), embed=embed)
+                    return 
+        except Exception as e:
+            print(f"Anti-Raid Error: {e}")
 
     @app_commands.command(name="addadmin", description=MESSAGES["desc_addadmin"])
     async def addadmin(self, interaction: discord.Interaction, target: discord.User | discord.Role):
