@@ -1,6 +1,6 @@
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 import sys
 import os
 import datetime
@@ -8,12 +8,46 @@ import asyncio
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# [เพิ่ม] DATA_FILE เข้าไปใน import เพื่อใช้ระบุตำแหน่งไฟล์
 from config import MESSAGES, load_data, save_data, is_admin_or_has_permission, is_support_or_admin, init_guild_data, DATA_FILE
 
 class AdminSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        # เริ่มการทำงานของ Auto Backup Loop
+        self.autobackup_task.start()
+
+    def cog_unload(self):
+        # หยุด Loop เมื่อมีการปิดบอทหรือโหลดโค้ดใหม่
+        self.autobackup_task.cancel()
+
+    # =========================================
+    # 🔄 AUTO BACKUP LOOP (ทุก 1 ชั่วโมง)
+    # =========================================
+    @tasks.loop(hours=1)
+    async def autobackup_task(self):
+        # รอให้บอทพร้อมก่อนทำงาน
+        await self.bot.wait_until_ready()
+        
+        try:
+            if not os.path.exists(DATA_FILE): return
+
+            data = load_data()
+            # เช็คว่ามีการตั้งค่าช่อง backup ไว้หรือไม่
+            # (เราจะเก็บ key 'autobackup_channel' ไว้ใน data.json)
+            channel_id = data.get("autobackup_channel")
+            
+            if channel_id:
+                channel = self.bot.get_channel(channel_id) or await self.bot.fetch_channel(channel_id)
+                if channel:
+                    file = discord.File(DATA_FILE, filename=f"backup-{int(datetime.datetime.now().timestamp())}.json")
+                    await channel.send(content=f"⏰ **Auto Backup** ({datetime.datetime.now().strftime('%H:%M')})", file=file)
+                    print(f"Auto-backup sent to channel {channel_id}")
+        except Exception as e:
+            print(f"Auto-backup failed: {e}")
+
+    # =========================================
+    # COMMANDS
+    # =========================================
 
     @app_commands.command(name="anti-raid", description=MESSAGES["desc_antiraid"])
     @app_commands.describe(status="เปิด (True) หรือ ปิด (False) ระบบป้องกัน", log_channel="ช่องสำหรับแจ้งเตือน")
@@ -31,14 +65,9 @@ class AdminSystem(commands.Cog):
         }
         save_data(data)
         
-        if status:
-            msg = MESSAGES["ar_enabled"].format(channel=log_channel.mention)
-        else:
-            msg = MESSAGES["ar_disabled"]
-            
+        msg = MESSAGES["ar_enabled"].format(channel=log_channel.mention) if status else MESSAGES["ar_disabled"]
         await interaction.followup.send(msg, ephemeral=True)
 
-    # Anti-Raid Logic
     @commands.Cog.listener()
     async def on_webhooks_update(self, channel):
         guild = channel.guild
@@ -51,14 +80,12 @@ class AdminSystem(commands.Cog):
         if not ar_config["status"]: return
         
         try:
-            # Check audit log for webhook creation
             async for entry in guild.audit_logs(limit=1, action=discord.AuditLogAction.webhook_create):
                 if (datetime.datetime.now(datetime.timezone.utc) - entry.created_at).total_seconds() > 10: return
 
                 user = entry.user
                 if user.bot: return 
                 
-                # Check if user is admin/support
                 is_authorized = False
                 if user.guild_permissions.administrator: is_authorized = True
                 if user.id in data["admins"]: is_authorized = True
@@ -69,7 +96,6 @@ class AdminSystem(commands.Cog):
                 log_chan = guild.get_channel(log_chan_id) if log_chan_id else None
 
                 if is_authorized:
-                    # Authorized: Just Log (Safe)
                     if log_chan:
                         embed = discord.Embed(title=MESSAGES["ar_log_title_safe"], description=MESSAGES["ar_log_desc_safe"], color=discord.Color.green())
                         embed.add_field(name=MESSAGES["ar_field_user"], value=MESSAGES["ar_val_user"].format(mention=user.mention, id=user.id), inline=True)
@@ -77,29 +103,21 @@ class AdminSystem(commands.Cog):
                         embed.add_field(name=MESSAGES["ar_field_action"], value=MESSAGES["ar_action_safe"], inline=False)
                         embed.timestamp = datetime.datetime.now()
                         await log_chan.send(embed=embed)
-
                 else:
-                    # Unauthorized: Delete & Ban & Alert
                     webhook = entry.target
                     try: await webhook.delete(reason="Anti-Raid: Unauthorized creation")
                     except: pass
-                    
-                    try:
-                        await channel.set_permissions(user, manage_webhooks=False, reason="Anti-Raid: Blocked user")
+                    try: await channel.set_permissions(user, manage_webhooks=False, reason="Anti-Raid: Blocked user")
                     except: pass
                     
                     if log_chan:
-                        # Construct Pings
                         pings = []
                         for admin_id in data["admins"]:
-                            # Try to resolve if role or user
                             if guild.get_role(admin_id): pings.append(f"<@&{admin_id}>")
                             else: pings.append(f"<@{admin_id}>")
-                        
                         for sup_id in data["supports"]:
                             if guild.get_role(sup_id): pings.append(f"<@&{sup_id}>")
                             else: pings.append(f"<@{sup_id}>")
-                            
                         ping_str = " ".join(pings) if pings else "@here"
                         
                         embed = discord.Embed(title=MESSAGES["ar_log_title"], description=MESSAGES["ar_log_desc"], color=discord.Color.red())
@@ -107,10 +125,7 @@ class AdminSystem(commands.Cog):
                         embed.add_field(name=MESSAGES["ar_field_webhook"], value=MESSAGES["ar_val_webhook"].format(name=webhook.name, id=webhook.id), inline=True)
                         embed.add_field(name=MESSAGES["ar_field_action"], value=MESSAGES["ar_action_taken"], inline=False)
                         embed.timestamp = datetime.datetime.now()
-                        
-                        # Send with pings
                         await log_chan.send(content=MESSAGES["ar_ping_msg"].format(mentions=ping_str), embed=embed)
-                    
                     return 
         except Exception as e:
             print(f"Anti-Raid Error: {e}")
@@ -212,18 +227,34 @@ class AdminSystem(commands.Cog):
     # 📥 ระบบ BACKUP & RESTORE
     # =========================================
     
-    @app_commands.command(name="backup", description="สำรองข้อมูล data.json (โหลดเก็บไว้กันหาย)")
-    async def backup(self, interaction: discord.Interaction):
+    @app_commands.command(name="backup", description="สำรองข้อมูล data.json")
+    @app_commands.describe(autobackup_log="[Optional] ช่องสำหรับส่ง Auto Backup ทุก 1 ชม.")
+    async def backup(self, interaction: discord.Interaction, autobackup_log: discord.TextChannel = None):
         if not is_admin_or_has_permission(interaction): 
             return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
         
         await interaction.response.defer(ephemeral=True)
         
-        if os.path.exists(DATA_FILE):
-            file = discord.File(DATA_FILE, filename="data.json")
-            await interaction.followup.send("📦 **ไฟล์ Backup ข้อมูลปัจจุบัน**\nโปรดโหลดเก็บไว้ในคอมพิวเตอร์\nหากข้อมูลหายสามารถใช้คำสั่ง `/restore` เพื่อกู้คืนได้", file=file, ephemeral=True)
+        if not os.path.exists(DATA_FILE):
+            return await interaction.followup.send("❌ ไม่พบไฟล์ข้อมูล (Database ยังไม่ถูกสร้าง)", ephemeral=True)
+
+        # กรณีเลือกช่อง Auto Backup
+        if autobackup_log:
+            data = load_data()
+            data["autobackup_channel"] = autobackup_log.id
+            save_data(data)
+            
+            # ส่งข้อความยืนยัน
+            await interaction.followup.send(f"✅ **ตั้งค่า Auto Backup เรียบร้อย!**\nจะส่งไฟล์ Backup เข้าห้อง {autobackup_log.mention} ทุก 1 ชั่วโมง\n(เริ่มส่งไฟล์แรกทันที...)", ephemeral=True)
+            
+            # ส่งไฟล์แรกทันที
+            file = discord.File(DATA_FILE, filename="data-init.json")
+            await autobackup_log.send(f"📦 **Backup เริ่มต้น** (Setup by {interaction.user.mention})", file=file)
+        
+        # กรณีไม่เลือกช่อง (Manual Download)
         else:
-            await interaction.followup.send("❌ ไม่พบไฟล์ข้อมูล (Database ยังไม่ถูกสร้าง)", ephemeral=True)
+            file = discord.File(DATA_FILE, filename="data.json")
+            await interaction.followup.send("📦 **ไฟล์ Backup ข้อมูลปัจจุบัน**", file=file, ephemeral=True)
 
     @app_commands.command(name="restore", description="กู้คืนข้อมูลจากไฟล์ data.json")
     @app_commands.describe(file="ไฟล์ data.json ที่ต้องการกู้คืน")
@@ -231,15 +262,15 @@ class AdminSystem(commands.Cog):
         if not is_admin_or_has_permission(interaction): 
             return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
         
-        # เช็คว่าเป็นไฟล์ .json หรือไม่
         if not file.filename.endswith(".json"):
             return await interaction.response.send_message("❌ โปรดอัปโหลดไฟล์ .json เท่านั้น", ephemeral=True)
             
         await interaction.response.defer(ephemeral=True)
         
         try:
-            # บันทึกไฟล์ทับของเดิม
             await file.save(DATA_FILE)
+            # โหลดข้อมูลใหม่เพื่อเช็คความถูกต้อง (และ Refresh Cache ใน Memory ถ้ามี)
+            load_data() 
             await interaction.followup.send(f"✅ **กู้คืนข้อมูลสำเร็จ!**\nขนาดไฟล์: {file.size} bytes\nข้อมูลถูกบันทึกลงระบบแล้ว", ephemeral=True)
         except Exception as e:
             await interaction.followup.send(f"❌ เกิดข้อผิดพลาดในการกู้คืน: {e}", ephemeral=True)
