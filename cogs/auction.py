@@ -6,7 +6,6 @@ import os
 import datetime
 import re
 import asyncio
-
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import MESSAGES, load_data, save_data, is_admin_or_has_permission, get_files_from_urls, init_guild_data
 
@@ -15,6 +14,45 @@ class AuctionSystem(commands.Cog):
         self.bot = bot
         self.active_auctions = {}
         self.bot.loop.create_task(self.auction_loop())
+
+    # [NEW] Auto-Load: กู้คืนการประมูล
+    async def cog_load(self):
+        await self.bot.wait_until_ready()
+        print("🔄 Restoring Auction Views...")
+        data = load_data()
+        
+        # โหลดข้อมูล Active Auctions กลับเข้า Memory
+        if "active_auctions" in data:
+            for chan_id, auction_data in data["active_auctions"].items():
+                try:
+                    # แปลงเวลา (string -> datetime)
+                    if isinstance(auction_data['end_time'], str):
+                        auction_data['end_time'] = datetime.datetime.fromtimestamp(float(auction_data['end_time_ts']))
+                    
+                    self.active_auctions[int(chan_id)] = auction_data
+                    
+                    # กู้คืนปุ่ม (ใช้ message_id)
+                    if auction_data.get('message_id'):
+                        view = AuctionControlView(auction_data['seller_id'], self)
+                        self.bot.add_view(view, message_id=auction_data['message_id'])
+                        
+                except Exception as e:
+                    print(f"Failed to restore auction {chan_id}: {e}")
+        
+        print(f"✅ Restored {len(self.active_auctions)} active auctions.")
+
+    async def save_active_auctions(self):
+        # ฟังก์ชันช่วยเซฟลง JSON (ต้องแปลง datetime เป็น timestamp ก่อนเซฟ)
+        data = load_data()
+        serializable_auctions = {}
+        for cid, adata in self.active_auctions.items():
+            copy_data = adata.copy()
+            copy_data['end_time_ts'] = copy_data['end_time'].timestamp()
+            copy_data['end_time'] = str(copy_data['end_time']) # แค่ไว้ดูเล่น ใช้จริงใช้ ts
+            serializable_auctions[str(cid)] = copy_data
+            
+        data["active_auctions"] = serializable_auctions
+        save_data(data)
 
     async def auction_loop(self):
         while True:
@@ -29,6 +67,8 @@ class AuctionSystem(commands.Cog):
             for rid in to_remove:
                 if rid in self.active_auctions:
                     del self.active_auctions[rid]
+                    # [NEW] Save เมื่อลบ
+                    await self.save_active_auctions()
             await asyncio.sleep(5)
 
     @commands.Cog.listener()
@@ -68,6 +108,9 @@ class AuctionSystem(commands.Cog):
                 
                 sent_msg = await message.reply(response_text)
                 auction_data['last_bid_msg_id'] = sent_msg.id
+                
+                # [NEW] Save ทุกครั้งที่มีการบิด
+                await self.save_active_auctions()
                 
                 if (datetime.datetime.now().timestamp() - auction_data.get('last_rename', 0)) > 30:
                     try:
@@ -143,93 +186,65 @@ class AuctionSystem(commands.Cog):
         view = TransactionView(seller_id, winner_id, auction_data, self.bot, count)
         await channel.send(content=winner_mention, embed=embed, view=view)
 
-    # ----------------------------------------------------
-    # สร้าง Embed (รองรับทั้ง Preview และ ของจริง)
-    # ----------------------------------------------------
+    # ... (ส่วนสร้าง Embed, Preview เหมือนเดิม) ...
     async def create_final_style_embed(self, auction_data, is_preview=False, custom_end_timestamp=None):
         if custom_end_timestamp:
             timestamp = custom_end_timestamp
         else:
-            # คำนวณเวลาปิดหลอกๆ (Preview)
             duration = auction_data.get('duration_minutes', 60)
             end_time = datetime.datetime.now() + datetime.timedelta(minutes=duration)
             timestamp = int(end_time.timestamp())
         
         main_embed = discord.Embed(description=MESSAGES["auc_embed_title"], color=discord.Color.purple())
-        
         main_embed.add_field(name="👤 ผู้เปิดประมูล", value=f"<@{auction_data['seller_id']}>", inline=True)
         main_embed.add_field(name="\u200b", value="\u200b", inline=True)
         main_embed.add_field(name="📦 " + MESSAGES["auc_lbl_item"], value=f"**{auction_data['item_name']}**", inline=False)
-        
         main_embed.add_field(name="💰 " + MESSAGES["auc_lbl_start"], value=f"`{auction_data['start_price']} บ.-`", inline=True)
         main_embed.add_field(name="📈 " + MESSAGES["auc_lbl_step"], value=f"`{auction_data['bid_step']} บ.-`", inline=True)
         main_embed.add_field(name="🛎️ " + MESSAGES["auc_lbl_close"], value=f"`{auction_data['close_price']} บ.-`", inline=True)
-        
         main_embed.add_field(name="📜 " + MESSAGES["auc_lbl_rights"], value=f"{auction_data['rights']}", inline=False)
-        # [FIX] ข้อมูลเพิ่มเติมจะไม่หายแล้ว เพราะเราจัดลำดับ field ใหม่โดยไม่ใช้การ overwrite index
         main_embed.add_field(name="ℹ️ " + MESSAGES["auc_lbl_extra"], value=f"{auction_data['extra_info']}", inline=False)
-        
         main_embed.add_field(name="───────────────", value=f"⏰ **ปิดประมูล : <t:{timestamp}:R>**", inline=False)
         
         if is_preview:
-            main_embed.title = "🔎 ตัวอย่างเมื่อเปิดประมูล"
+            main_embed.title = "🔎 ตัวอย่างเมื่อเปิดประมูล (Preview)"
             main_embed.set_footer(text="นี่คือตัวอย่างการแสดงผล ข้อมูลจริงจะปรากฏเมื่อแอดมินอนุมัติ")
-
         return main_embed
 
     async def send_user_preview(self, channel, auction_data, old_preview_msg=None):
         if old_preview_msg:
             try: await old_preview_msg.delete()
             except: pass
-            
         embed = await self.create_final_style_embed(auction_data, is_preview=True)
         files_to_send = await get_files_from_urls(auction_data["img_product_urls"])
-        
         view = PreviewView(auction_data, channel, self)
         msg = await channel.send(embed=embed, files=files_to_send, view=view)
         return msg
 
     async def wait_for_images(self, channel, user, auction_data, is_edit=False):
-        def check_product(m): 
-            return m.author.id == user.id and m.channel.id == channel.id and m.attachments
-
+        def check_product(m): return m.author.id == user.id and m.channel.id == channel.id and m.attachments
         try:
             await channel.send(MESSAGES["auc_wait_img_1"].format(user=user.mention))
             msg1 = await self.bot.wait_for('message', check=check_product, timeout=300)
             auction_data["img_product_urls"] = [att.url for att in msg1.attachments]
-            
             await channel.send(MESSAGES["auc_wait_img_2"])
             while True:
                 msg2 = await self.bot.wait_for('message', timeout=300)
                 if msg2.author.id != user.id or msg2.channel.id != channel.id: continue
                 if not msg2.attachments: continue
-                
-                if len(msg2.attachments) > 1:
-                    await channel.send("⚠️ กรุณาส่ง QR Code เพียง **1 รูป** เท่านั้นครับ", delete_after=10)
-                    continue
-                if not msg2.attachments[0].content_type or not msg2.attachments[0].content_type.startswith('image'):
-                    await channel.send("⚠️ กรุณาส่งไฟล์ **รูปภาพ** เท่านั้นครับ", delete_after=10)
-                    continue
-                
+                if len(msg2.attachments) > 1: await channel.send("⚠️ กรุณาส่ง QR Code เพียง **1 รูป** เท่านั้นครับ", delete_after=10); continue
+                if not msg2.attachments[0].content_type or not msg2.attachments[0].content_type.startswith('image'): await channel.send("⚠️ กรุณาส่งไฟล์ **รูปภาพ** เท่านั้นครับ", delete_after=10); continue
                 auction_data["img_qr_url"] = msg2.attachments[0].url
                 break
-
             await channel.send(MESSAGES["auc_img_received"])
             await self.send_user_preview(channel, auction_data)
+        except asyncio.TimeoutError: await channel.delete()
 
-        except asyncio.TimeoutError:
-            await channel.delete()
-
-
-# -------------------------------------------------------------------
-# Views & Modals
-# -------------------------------------------------------------------
-
+# --- Views (Start, Preview, Edit, Approval) ---
 class StartAuctionView(discord.ui.View):
     def __init__(self, category, approval_channel, role_ping, log_channel, label, cog):
         super().__init__(timeout=None)
-        self.category, self.approval_channel, self.role_ping, self.log_channel = category, approval_channel, role_ping, log_channel
-        self.cog = cog
+        self.category, self.approval_channel, self.role_ping, self.log_channel, self.cog = category, approval_channel, role_ping, log_channel, cog
         button = discord.ui.Button(label=label, style=discord.ButtonStyle.green, custom_id="start_auction_btn")
         button.callback = self.start_callback
         self.add_item(button)
@@ -239,35 +254,20 @@ class StartAuctionView(discord.ui.View):
 class AuctionModalStep1(discord.ui.Modal, title=MESSAGES["auc_step1_title"]):
     def __init__(self, category, approval_channel, role_ping, log_channel, cog, default_data=None, preview_msg=None):
         super().__init__()
-        self.category, self.approval_channel, self.role_ping, self.log_channel = category, approval_channel, role_ping, log_channel
-        self.cog = cog
-        self.default_data = default_data
-        self.preview_msg = preview_msg
-
+        self.category, self.approval_channel, self.role_ping, self.log_channel, self.cog, self.default_data, self.preview_msg = category, approval_channel, role_ping, log_channel, cog, default_data, preview_msg
         d_start = str(default_data['start_price']) if default_data else ""
         d_step = str(default_data['bid_step']) if default_data else ""
         d_close = str(default_data['close_price']) if default_data else ""
         d_name = str(default_data['item_name']) if default_data else ""
-
         self.start_price = discord.ui.TextInput(label=MESSAGES["auc_lbl_start"], placeholder=MESSAGES["auc_ph_start"], required=True, default=d_start)
         self.bid_step = discord.ui.TextInput(label=MESSAGES["auc_lbl_step"], placeholder=MESSAGES["auc_ph_step"], required=True, default=d_step)
         self.close_price = discord.ui.TextInput(label=MESSAGES["auc_lbl_close"], placeholder=MESSAGES["auc_ph_close"], required=True, default=d_close)
         self.item_name = discord.ui.TextInput(label=MESSAGES["auc_lbl_item"], style=discord.TextStyle.paragraph, required=True, default=d_name)
-
-        self.add_item(self.start_price)
-        self.add_item(self.bid_step)
-        self.add_item(self.close_price)
-        self.add_item(self.item_name)
-
+        self.add_item(self.start_price); self.add_item(self.bid_step); self.add_item(self.close_price); self.add_item(self.item_name)
     async def on_submit(self, interaction: discord.Interaction):
         try:
             if self.default_data:
-                self.default_data.update({
-                    "start_price": int(self.start_price.value),
-                    "bid_step": int(self.bid_step.value),
-                    "close_price": int(self.close_price.value),
-                    "item_name": self.item_name.value
-                })
+                self.default_data.update({"start_price": int(self.start_price.value),"bid_step": int(self.bid_step.value),"close_price": int(self.close_price.value),"item_name": self.item_name.value})
                 await interaction.response.defer()
                 await self.cog.send_user_preview(interaction.channel, self.default_data, self.preview_msg)
             else:
@@ -275,8 +275,7 @@ class AuctionModalStep1(discord.ui.Modal, title=MESSAGES["auc_step1_title"]):
                 view = Step2View(auction_data, self.cog)
                 await interaction.response.send_message(MESSAGES["auc_prompt_step2"], view=view, ephemeral=True)
         except ValueError: 
-            if not interaction.response.is_done():
-                await interaction.response.send_message(MESSAGES["auc_err_num"], ephemeral=True)
+            if not interaction.response.is_done(): await interaction.response.send_message(MESSAGES["auc_err_num"], ephemeral=True)
 
 class Step2View(discord.ui.View):
     def __init__(self, auction_data, cog):
@@ -289,42 +288,23 @@ class Step2View(discord.ui.View):
 class AuctionModalStep2(discord.ui.Modal, title=MESSAGES["auc_step2_title"]):
     def __init__(self, auction_data, cog, preview_msg=None):
         super().__init__()
-        self.auction_data, self.cog = auction_data, cog
-        self.preview_msg = preview_msg
-        
+        self.auction_data, self.cog, self.preview_msg = auction_data, cog, preview_msg
         d_link = str(auction_data.get("download_link", ""))
         d_rights = str(auction_data.get("rights", ""))
         d_extra = str(auction_data.get("extra_info", "-"))
         d_time = ""
-        if "duration_minutes" in auction_data:
-            h = auction_data["duration_minutes"] // 60
-            m = auction_data["duration_minutes"] % 60
-            d_time = f"{h:02d}:{m:02d}"
-
+        if "duration_minutes" in auction_data: d_time = f"{auction_data['duration_minutes'] // 60:02d}:{auction_data['duration_minutes'] % 60:02d}"
         self.download_link = discord.ui.TextInput(label=MESSAGES["auc_lbl_link"], placeholder=MESSAGES["auc_ph_link"], required=True, default=d_link)
         self.rights = discord.ui.TextInput(label=MESSAGES["auc_lbl_rights"], placeholder=MESSAGES["auc_ph_rights"], required=True, default=d_rights)
         self.extra_info = discord.ui.TextInput(label=MESSAGES["auc_lbl_extra"], placeholder=MESSAGES["auc_ph_extra"], required=False, style=discord.TextStyle.paragraph, default=d_extra)
         self.end_time_str = discord.ui.TextInput(label=MESSAGES["auc_lbl_time"], placeholder=MESSAGES["auc_ph_time"], required=True, default=d_time)
-
-        self.add_item(self.download_link)
-        self.add_item(self.rights)
-        self.add_item(self.extra_info)
-        self.add_item(self.end_time_str)
-
+        self.add_item(self.download_link); self.add_item(self.rights); self.add_item(self.extra_info); self.add_item(self.end_time_str)
     async def on_submit(self, interaction: discord.Interaction):
         try:
             h, m = map(int, self.end_time_str.value.split(':'))
             total_minutes = (h * 60) + m
             if total_minutes <= 0: raise ValueError
-            
-            self.auction_data.update({
-                "download_link": self.download_link.value, 
-                "rights": self.rights.value,
-                "extra_info": self.extra_info.value if self.extra_info.value else "-",
-                "duration_minutes": total_minutes, 
-                "seller_id": interaction.user.id
-            })
-            
+            self.auction_data.update({"download_link": self.download_link.value, "rights": self.rights.value,"extra_info": self.extra_info.value if self.extra_info.value else "-","duration_minutes": total_minutes, "seller_id": interaction.user.id})
             if self.preview_msg:
                 await interaction.response.defer()
                 await self.cog.send_user_preview(interaction.channel, self.auction_data, self.preview_msg)
@@ -334,38 +314,30 @@ class AuctionModalStep2(discord.ui.Modal, title=MESSAGES["auc_step2_title"]):
                 for admin_id in data["admins"]:
                     member = interaction.guild.get_member(admin_id)
                     if member: overwrites[member] = discord.PermissionOverwrite(read_messages=True)
-                
                 channel = await interaction.guild.create_text_channel(f"✧꒰ส่งรูปสินค้า📦-{interaction.user.name}꒱", overwrites=overwrites)
                 await interaction.response.send_message(MESSAGES["auc_created_channel"].format(channel=channel.mention), ephemeral=True)
                 self.cog.bot.loop.create_task(self.cog.wait_for_images(channel, interaction.user, self.auction_data))
         except: 
-            if not interaction.response.is_done():
-                await interaction.response.send_message(MESSAGES["auc_err_time"], ephemeral=True)
+            if not interaction.response.is_done(): await interaction.response.send_message(MESSAGES["auc_err_time"], ephemeral=True)
 
 class PreviewView(discord.ui.View):
     def __init__(self, auction_data, temp_channel, cog):
         super().__init__(timeout=None)
         self.auction_data, self.temp_channel, self.cog = auction_data, temp_channel, cog
-
     @discord.ui.button(label="✅ ยืนยัน (ส่งให้แอดมิน)", style=discord.ButtonStyle.green)
     async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
-        
         approval_channel = self.cog.bot.get_channel(self.auction_data["approval_id"])
         if approval_channel:
-            # ใช้ Embed แบบของจริงแต่เปลี่ยน Title
             base_embed = await self.cog.create_final_style_embed(self.auction_data, is_preview=False)
             base_embed.title = MESSAGES["auc_embed_request_title"]
             base_embed.color = discord.Color.gold()
-            
             files_to_send = await get_files_from_urls(self.auction_data["img_product_urls"])
             view = ApprovalView(self.auction_data, self.temp_channel, self.cog)
             await approval_channel.send(embed=base_embed, files=files_to_send, view=view)
-        
         await interaction.followup.send("ส่งคำขอให้แอดมินเรียบร้อยแล้วครับ! โปรดรอการอนุมัติ", ephemeral=True)
         for child in self.children: child.disabled = True
         await interaction.message.edit(view=self)
-
     @discord.ui.button(label="✏️ แก้ไข", style=discord.ButtonStyle.primary)
     async def edit(self, interaction: discord.Interaction, button: discord.ui.Button):
         view = EditSelectionView(self.auction_data, self.temp_channel, self.cog, interaction.message)
@@ -375,17 +347,14 @@ class EditSelectionView(discord.ui.View):
     def __init__(self, auction_data, temp_channel, cog, message):
         super().__init__(timeout=None)
         self.auction_data, self.temp_channel, self.cog, self.message = auction_data, temp_channel, cog, message
-
     @discord.ui.button(label="แก้ไขฟอร์ม 1 (ราคา/ชื่อ)", style=discord.ButtonStyle.secondary)
     async def edit_form1(self, interaction: discord.Interaction, button: discord.ui.Button):
         modal = AuctionModalStep1(None, None, None, None, self.cog, default_data=self.auction_data, preview_msg=self.message)
         await interaction.response.send_modal(modal)
-
     @discord.ui.button(label="แก้ไขฟอร์ม 2 (ลิ้งค์/เวลา)", style=discord.ButtonStyle.secondary)
     async def edit_form2(self, interaction: discord.Interaction, button: discord.ui.Button):
         modal = AuctionModalStep2(self.auction_data, self.cog, preview_msg=self.message)
         await interaction.response.send_modal(modal)
-
     @discord.ui.button(label="แก้ไขรูปภาพ", style=discord.ButtonStyle.secondary)
     async def edit_images(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message("กรุณาส่งรูปสินค้าใหม่ และตามด้วยรูป QR Code ใหม่ครับ", ephemeral=True)
@@ -402,43 +371,34 @@ class ApprovalView(discord.ui.View):
         await interaction.response.defer()
         if self.temp_channel: await self.temp_channel.delete()
         category = interaction.guild.get_channel(self.auction_data["category_id"])
-        
         data = load_data()
         init_guild_data(data, interaction.guild_id)
         data["guilds"][str(interaction.guild_id)]["auction_count"] += 1
         count = data["guilds"][str(interaction.guild_id)]["auction_count"]
         save_data(data)
-        
         auction_channel = await interaction.guild.create_text_channel(f"ประมูลครั้งที่-{count}-ราคา-{self.auction_data['start_price']}", category=category)
         ping_role = interaction.guild.get_role(self.auction_data["role_ping_id"])
         if ping_role: await auction_channel.send(ping_role.mention, delete_after=5)
         
-        # คำนวณเวลาจบจริง
         end_time = datetime.datetime.now() + datetime.timedelta(minutes=self.auction_data["duration_minutes"])
         timestamp = int(end_time.timestamp())
-        
-        # สร้าง Embed สมบูรณ์โดยส่งเวลาจริงเข้าไปเลย
         main_embed = await self.cog.create_final_style_embed(self.auction_data, is_preview=False, custom_end_timestamp=timestamp)
-
-        # 1. ส่ง Embed ข้อมูลก่อน
         embed_msg = await auction_channel.send(embed=main_embed)
-
-        # 2. ส่งรูปภาพ + ปุ่ม (เพื่อให้ปุ่มอยู่ใต้รูป)
+        
         files_to_send = await get_files_from_urls(self.auction_data["img_product_urls"])
         view = AuctionControlView(self.auction_data['seller_id'], self.cog)
-        
         if files_to_send:
             await auction_channel.send(files=files_to_send, view=view)
-            # เก็บ msg id ของ embed หรือ ของปุ่ม? ปกติระบบบอทนี้เก็บ id เพื่อลบ/แก้ไข
-            # เก็บ id ของ embed ไว้ใน message_id หลักดีกว่า
             msg_id = embed_msg.id
         else:
-            # กรณีไม่มีรูป (ซึ่งไม่น่าเกิด) ให้แปะปุ่มที่ embed
             await embed_msg.edit(view=view)
             msg_id = embed_msg.id
         
         self.auction_data.update({'channel_id': auction_channel.id, 'current_price': self.auction_data['start_price'],'end_time': end_time, 'winner_id': None, 'message_id': msg_id, 'active': True, 'last_bid_msg_id': None})
         self.cog.active_auctions[auction_channel.id] = self.auction_data
+        
+        # [NEW] Save ทันทีหลัง Approve
+        await self.cog.save_active_auctions()
         
         await interaction.followup.send(MESSAGES["auc_admin_approve_log"].format(channel=auction_channel.mention))
         self.stop()
@@ -481,7 +441,6 @@ class TransactionView(discord.ui.View):
     def __init__(self, seller_id, winner_id, auction_data, bot, count):
         super().__init__(timeout=None)
         self.seller_id, self.winner_id, self.auction_data, self.bot, self.count = seller_id, winner_id, auction_data, bot, count
-
     @discord.ui.button(label=MESSAGES["auc_btn_confirm"], style=discord.ButtonStyle.green)
     async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.seller_id and not is_admin_or_has_permission(interaction): return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
@@ -505,14 +464,12 @@ class ConfirmFinalView(discord.ui.View):
             dm_msg = MESSAGES["auc_dm_success"]
         except: dm_msg = MESSAGES["auc_dm_fail"].format(user=f"<@{self.auction_data['winner_id']}>")
         await interaction.followup.send(f"{dm_msg}\n{MESSAGES['msg_channel_ready_delete']}", ephemeral=True)
-        
         if self.auction_data['log_id']:
             log = self.bot.get_channel(self.auction_data['log_id'])
             data = load_data()
             embed = discord.Embed(description=MESSAGES["auc_success_log"].format(count=self.count, seller=f"<@{self.auction_data['seller_id']}>", winner=f"<@{self.auction_data['winner_id']}>", price=self.auction_data['current_price']), color=discord.Color.green())
             files_to_send = await get_files_from_urls(self.auction_data["img_product_urls"])
             await log.send(embed=embed, files=files_to_send)
-        
         await self.channel.send(MESSAGES["msg_channel_ready_delete"], view=AdminCloseView())
 
 class CancelReasonModal(discord.ui.Modal, title=MESSAGES["auc_modal_cancel_title"]):
@@ -527,7 +484,6 @@ class CancelReasonModal(discord.ui.Modal, title=MESSAGES["auc_modal_cancel_title
             embed = discord.Embed(description=MESSAGES["auc_cancel_log"].format(count=self.count, seller=f"<@{self.auction_data['seller_id']}>", user=interaction.user.mention, reason=self.reason.value), color=discord.Color.red())
             await log.send(embed=embed)
         await interaction.response.send_message(MESSAGES["auc_msg_cancel_success"], ephemeral=True)
-        
         await self.channel.send(MESSAGES["msg_channel_ready_delete"], view=AdminCloseView())
 
 async def setup(bot):
