@@ -53,8 +53,8 @@ class AdminSystem(commands.Cog):
     # 🔒 OWNER ONLY COMMANDS
     # =========================================
 
-    # [FIXED] เปลี่ยนชื่อฟังก์ชันจาก bot_info เป็น info_bot (สำคัญมาก!)
-    @app_commands.command(name="bot-info", description="[Owner Only] ดูข้อมูลบอทและรายชื่อเซิฟเวอร์ทั้งหมด")
+    # [FIXED] เปลี่ยนชื่อคำสั่งเป็น info และใช้ชื่อฟังก์ชัน info_bot (ไม่มี bot_ นำหน้า)
+    @app_commands.command(name="info", description="[Owner Only] ดูข้อมูลบอทและรายชื่อเซิฟเวอร์ทั้งหมด")
     async def info_bot(self, interaction: discord.Interaction):
         if not is_owner(interaction):
             return await interaction.response.send_message(MESSAGES["owner_only"], ephemeral=True)
@@ -80,14 +80,16 @@ class AdminSystem(commands.Cog):
                 try:
                     target_channel = next((c for c in guild.text_channels if c.permissions_for(guild.me).create_instant_invite), None)
                     if target_channel:
-                        invite = await target_channel.create_invite(max_age=0, max_uses=0, reason="Bot Owner Requested Info")
+                        invite = await target_channel.create_invite(max_age=0, max_uses=0, reason="Bot Owner Info Request")
                         invite_url = invite.url
                 except: pass
             
-            details.append(f"• **{guild.name}** (`{guild.id}`)\n   👑 เจ้าของ: {guild.owner} | 👥 สมาชิก: {guild.member_count}\n   🔗 {invite_url}")
+            owner_name = guild.owner.name if guild.owner else "Unknown"
+            details.append(f"• **{guild.name}** (`{guild.id}`)\n   👑 เจ้าของ: {owner_name} | 👥 สมาชิก: {guild.member_count}\n   🔗 {invite_url}")
 
         embed = discord.Embed(title="🤖 ข้อมูลบอท (Bot Information)", color=discord.Color.blue())
-        embed.set_thumbnail(url=self.bot.user.display_avatar.url)
+        if self.bot.user.avatar:
+            embed.set_thumbnail(url=self.bot.user.avatar.url)
         embed.add_field(name="📊 สถิติรวม", value=f"🏢 จำนวนเซิฟเวอร์: `{total_guilds}`\n👤 สมาชิกทั้งหมด: `{total_members}`", inline=False)
         
         server_list_str = "\n\n".join(details)
@@ -130,7 +132,6 @@ class AdminSystem(commands.Cog):
         try:
             await file.save(DATA_FILE)
             load_data() 
-            # พยายามเรียก restore ของ QueueSystem ถ้ามี
             queue_cog = self.bot.get_cog("QueueSystem")
             if queue_cog:
                 await queue_cog.restore_queue_system()
@@ -167,7 +168,7 @@ class AdminSystem(commands.Cog):
             
             await interaction.followup.send(f"✅ **ตั้งค่า Auto Backup เรียบร้อย!**\nจะส่งไฟล์ Backup เข้าห้อง {autobackup_log.mention} ของเซิร์ฟเวอร์นี้ ทุก 1 ชั่วโมง", ephemeral=True)
             file = discord.File(DATA_FILE, filename=filename)
-            await autobackup_log.send(f"📦 **Backup เริ่มต้น**", file=file)
+            await autobackup_log.send(f"📦 **Backup เริ่มต้น** (Setup by {interaction.user.mention})", file=file)
         else:
             file = discord.File(DATA_FILE, filename=filename)
             await interaction.followup.send("📦 **ไฟล์ Backup ข้อมูลปัจจุบัน**", file=file, ephemeral=True)
