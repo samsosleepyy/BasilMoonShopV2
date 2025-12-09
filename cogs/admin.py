@@ -53,10 +53,9 @@ class AdminSystem(commands.Cog):
     # 🔒 OWNER ONLY COMMANDS
     # =========================================
 
-    # [FIXED] เปลี่ยนชื่อฟังก์ชันจาก bot_info เป็น info_bot เพื่อแก้ Error
+    # [FIXED] เปลี่ยนชื่อฟังก์ชันจาก bot_info เป็น info_bot
     @app_commands.command(name="bot-info", description="[Owner Only] ดูข้อมูลบอทและรายชื่อเซิฟเวอร์ทั้งหมด")
     async def info_bot(self, interaction: discord.Interaction):
-        # [CHECK] ตรวจสอบว่าเป็น Owner หรือไม่
         if not is_owner(interaction):
             return await interaction.response.send_message(MESSAGES["owner_only"], ephemeral=True)
         
@@ -70,7 +69,6 @@ class AdminSystem(commands.Cog):
         
         for guild in guilds:
             invite_url = "❌ บอทไม่มีสิทธิ์สร้างลิ้งค์"
-            # 1. หาลิ้งค์เดิม
             try:
                 invites = await guild.invites()
                 if invites:
@@ -78,7 +76,6 @@ class AdminSystem(commands.Cog):
                     invite_url = target_invite.url
             except: pass
                 
-            # 2. สร้างลิ้งค์ใหม่
             if invite_url.startswith("❌"):
                 try:
                     target_channel = next((c for c in guild.text_channels if c.permissions_for(guild.me).create_instant_invite), None)
@@ -133,6 +130,7 @@ class AdminSystem(commands.Cog):
         try:
             await file.save(DATA_FILE)
             load_data() 
+            # พยายามเรียก restore ของ QueueSystem ถ้ามี
             queue_cog = self.bot.get_cog("QueueSystem")
             if queue_cog:
                 await queue_cog.restore_queue_system()
