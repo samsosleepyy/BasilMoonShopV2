@@ -32,18 +32,40 @@ class AdminSystem(commands.Cog):
             if not os.path.exists(DATA_FILE): return
 
             data = load_data()
-            # เช็คว่ามีการตั้งค่าช่อง backup ไว้หรือไม่
-            # (เราจะเก็บ key 'autobackup_channel' ไว้ใน data.json)
-            channel_id = data.get("autobackup_channel")
             
-            if channel_id:
-                channel = self.bot.get_channel(channel_id) or await self.bot.fetch_channel(channel_id)
-                if channel:
-                    file = discord.File(DATA_FILE, filename=f"backup-{int(datetime.datetime.now().timestamp())}.json")
-                    await channel.send(content=f"⏰ **Auto Backup** ({datetime.datetime.now().strftime('%H:%M')})", file=file)
-                    print(f"Auto-backup sent to channel {channel_id}")
+            # วนลูปเช็คทุก Guild ใน Database
+            if "guilds" in data:
+                for guild_id_str, guild_data in data["guilds"].items():
+                    # เช็คว่า Guild นี้ตั้งค่าช่อง Backup ไว้ไหม
+                    channel_id = guild_data.get("autobackup_channel")
+                    
+                    if channel_id:
+                        try:
+                            # พยายามหาช่อง
+                            channel = self.bot.get_channel(channel_id) or await self.bot.fetch_channel(channel_id)
+                            
+                            if channel:
+                                # [UPDATED] ดึงชื่อเซิฟเวอร์มาทำชื่อไฟล์
+                                guild = self.bot.get_guild(int(guild_id_str))
+                                guild_name = guild.name if guild else f"Guild-{guild_id_str}"
+                                
+                                # ล้างอักขระพิเศษออกจากชื่อไฟล์ (กัน Error)
+                                safe_name = "".join([c for c in guild_name if c.isalnum() or c in " -_"]).strip()
+                                if not safe_name: safe_name = "ServerData"
+                                
+                                # ตั้งชื่อไฟล์: ชื่อเซิฟ-data-วันเวลา.json
+                                timestamp = datetime.datetime.now().strftime('%d%m%y-%H%M')
+                                filename = f"{safe_name}-data-{timestamp}.json"
+                                
+                                file = discord.File(DATA_FILE, filename=filename)
+                                await channel.send(content=f"⏰ **Auto Backup** ({datetime.datetime.now().strftime('%H:%M')})", file=file)
+                                print(f"Auto-backup sent to guild {guild_name} ({guild_id_str})")
+                                
+                        except Exception as e:
+                            print(f"Failed to send backup to guild {guild_id_str}: {e}")
+                            
         except Exception as e:
-            print(f"Auto-backup failed: {e}")
+            print(f"Auto-backup loop error: {e}")
 
     # =========================================
     # COMMANDS
@@ -238,22 +260,30 @@ class AdminSystem(commands.Cog):
         if not os.path.exists(DATA_FILE):
             return await interaction.followup.send("❌ ไม่พบไฟล์ข้อมูล (Database ยังไม่ถูกสร้าง)", ephemeral=True)
 
-        # กรณีเลือกช่อง Auto Backup
+        # เตรียมชื่อไฟล์: ชื่อเซิฟ-data-วันเวลา.json
+        safe_name = "".join([c for c in interaction.guild.name if c.isalnum() or c in " -_"]).strip()
+        if not safe_name: safe_name = "ServerData"
+        timestamp = datetime.datetime.now().strftime('%d%m%y-%H%M')
+        filename = f"{safe_name}-data-{timestamp}.json"
+
+        # กรณีเลือกช่อง Auto Backup (แยกตาม Guild)
         if autobackup_log:
             data = load_data()
-            data["autobackup_channel"] = autobackup_log.id
+            init_guild_data(data, interaction.guild_id)
+            
+            # บันทึกแยกเป็นราย Guild
+            data["guilds"][str(interaction.guild_id)]["autobackup_channel"] = autobackup_log.id
             save_data(data)
             
-            # ส่งข้อความยืนยัน
-            await interaction.followup.send(f"✅ **ตั้งค่า Auto Backup เรียบร้อย!**\nจะส่งไฟล์ Backup เข้าห้อง {autobackup_log.mention} ทุก 1 ชั่วโมง\n(เริ่มส่งไฟล์แรกทันที...)", ephemeral=True)
+            await interaction.followup.send(f"✅ **ตั้งค่า Auto Backup เรียบร้อย!**\nจะส่งไฟล์ Backup เข้าห้อง {autobackup_log.mention} ของเซิร์ฟเวอร์นี้ ทุก 1 ชั่วโมง\n(เริ่มส่งไฟล์แรกทันที...)", ephemeral=True)
             
             # ส่งไฟล์แรกทันที
-            file = discord.File(DATA_FILE, filename="data-init.json")
-            await autobackup_log.send(f"📦 **Backup เริ่มต้น** (Setup by {interaction.user.mention})", file=file)
+            file = discord.File(DATA_FILE, filename=filename)
+            await autobackup_log.send(f"📦 **Backup เริ่มต้น**", file=file)
         
         # กรณีไม่เลือกช่อง (Manual Download)
         else:
-            file = discord.File(DATA_FILE, filename="data.json")
+            file = discord.File(DATA_FILE, filename=filename)
             await interaction.followup.send("📦 **ไฟล์ Backup ข้อมูลปัจจุบัน**", file=file, ephemeral=True)
 
     @app_commands.command(name="restore", description="กู้คืนข้อมูลจากไฟล์ data.json")
@@ -269,7 +299,6 @@ class AdminSystem(commands.Cog):
         
         try:
             await file.save(DATA_FILE)
-            # โหลดข้อมูลใหม่เพื่อเช็คความถูกต้อง (และ Refresh Cache ใน Memory ถ้ามี)
             load_data() 
             await interaction.followup.send(f"✅ **กู้คืนข้อมูลสำเร็จ!**\nขนาดไฟล์: {file.size} bytes\nข้อมูลถูกบันทึกลงระบบแล้ว", ephemeral=True)
         except Exception as e:
