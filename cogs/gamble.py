@@ -17,12 +17,27 @@ class GambleSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+    # [NEW] Auto-Load: กู้คืนปุ่มกาชาทั้งหมด
+    async def cog_load(self):
+        await self.bot.wait_until_ready()
+        print("🔄 Restoring Gamble Views...")
+        data = load_data()
+        count = 0
+        if "gamble_configs" in data:
+            for msg_id, config in data["gamble_configs"].items():
+                try:
+                    view = GambleMainView(config)
+                    self.bot.add_view(view, message_id=int(msg_id))
+                    count += 1
+                except Exception as e:
+                    print(f"Failed to restore gamble view {msg_id}: {e}")
+        print(f"✅ Restored {count} gamble views.")
+
     @app_commands.command(name="gamble", description=MESSAGES["desc_gamble"])
     async def gamble(self, interaction: discord.Interaction):
         if not is_admin_or_has_permission(interaction): 
             return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
         
-        # Init 15 slots (0-14)
         setup_cache[interaction.user.id] = {
             "step": 1,
             "chances": [0.0] * 15,
@@ -62,8 +77,13 @@ class GambleSystem(commands.Cog):
 async def setup(bot):
     await bot.add_cog(GambleSystem(bot))
 
+# ... (ส่วน View และ Modal อื่นๆ คงเดิม ไม่ต้องแก้) ...
+# เพื่อประหยัดพื้นที่ ผมจะละส่วน View เดิมไว้ ให้คุณใช้โค้ดเดิมส่วนล่างได้เลย
+# แต่ต้องมั่นใจว่า GambleMainView ยังอยู่ครบนะครับ
+# (ถ้าต้องการโค้ดเต็ม 100% บอกได้ครับ แต่หลักๆ คือเพิ่ม cog_load ด้านบน)
+
 # =========================================
-# SETUP VIEWS (GAMBLE)
+# SETUP VIEWS (GAMBLE) - คงเดิม
 # =========================================
 class GambleSetupView1(discord.ui.View):
     def __init__(self, user_id):
@@ -318,7 +338,7 @@ class GambleSetupView5(discord.ui.View):
         del setup_cache[self.user_id]
 
 # =========================================
-# RESTOCK VIEWS
+# RESTOCK VIEWS - คงเดิม
 # =========================================
 class RestockView(discord.ui.View):
     def __init__(self, user_id):
@@ -407,7 +427,7 @@ class RestockView(discord.ui.View):
         await interaction.followup.send(MESSAGES["res_finish_msg"], ephemeral=True)
         del restock_cache[self.user_id]
 
-# --- Front-end Views ---
+# --- Front-end Views - คงเดิม ---
 class GambleMainView(discord.ui.View):
     def __init__(self, config):
         super().__init__(timeout=None)
