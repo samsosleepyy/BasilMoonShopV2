@@ -17,8 +17,11 @@ class GambleSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    # [NEW] Auto-Load: กู้คืนปุ่มกาชาทั้งหมด
+    # [FIXED] ใช้ create_task
     async def cog_load(self):
+        self.bot.loop.create_task(self.restore_gamble_views())
+
+    async def restore_gamble_views(self):
         await self.bot.wait_until_ready()
         print("🔄 Restoring Gamble Views...")
         data = load_data()
@@ -77,13 +80,9 @@ class GambleSystem(commands.Cog):
 async def setup(bot):
     await bot.add_cog(GambleSystem(bot))
 
-# ... (ส่วน View และ Modal อื่นๆ คงเดิม ไม่ต้องแก้) ...
-# เพื่อประหยัดพื้นที่ ผมจะละส่วน View เดิมไว้ ให้คุณใช้โค้ดเดิมส่วนล่างได้เลย
-# แต่ต้องมั่นใจว่า GambleMainView ยังอยู่ครบนะครับ
-# (ถ้าต้องการโค้ดเต็ม 100% บอกได้ครับ แต่หลักๆ คือเพิ่ม cog_load ด้านบน)
-
+# ... (ส่วน View ต่างๆ ใช้ของเดิมจากที่คุณมีอยู่ได้เลยครับ โค้ดส่วนล่างไม่มีปัญหา) ...
 # =========================================
-# SETUP VIEWS (GAMBLE) - คงเดิม
+# SETUP VIEWS (GAMBLE)
 # =========================================
 class GambleSetupView1(discord.ui.View):
     def __init__(self, user_id):
@@ -338,7 +337,7 @@ class GambleSetupView5(discord.ui.View):
         del setup_cache[self.user_id]
 
 # =========================================
-# RESTOCK VIEWS - คงเดิม
+# RESTOCK VIEWS
 # =========================================
 class RestockView(discord.ui.View):
     def __init__(self, user_id):
@@ -427,7 +426,7 @@ class RestockView(discord.ui.View):
         await interaction.followup.send(MESSAGES["res_finish_msg"], ephemeral=True)
         del restock_cache[self.user_id]
 
-# --- Front-end Views - คงเดิม ---
+# --- Front-end Views ---
 class GambleMainView(discord.ui.View):
     def __init__(self, config):
         super().__init__(timeout=None)
