@@ -53,6 +53,59 @@ class AdminSystem(commands.Cog):
     # 🔒 OWNER ONLY COMMANDS
     # =========================================
 
+    # [RESTORED] นำคำสั่ง /info กลับมา (แก้ชื่อฟังก์ชันเป็น info_command เพื่อกัน Error)
+    @app_commands.command(name="info", description="[Owner Only] ดูข้อมูลบอทและรายชื่อเซิฟเวอร์ทั้งหมด")
+    async def info_command(self, interaction: discord.Interaction):
+        if not is_owner(interaction):
+            return await interaction.response.send_message(MESSAGES["owner_only"], ephemeral=True)
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        guilds = self.bot.guilds
+        total_guilds = len(guilds)
+        total_members = sum(g.member_count for g in guilds)
+        
+        details = []
+        
+        for guild in guilds:
+            invite_url = "❌ ไม่พบลิ้งค์"
+            # 1. ลองหาลิ้งค์เดิม
+            try:
+                invites = await guild.invites()
+                if invites:
+                    target_invite = next((inv for inv in invites if inv.max_age == 0), invites[0])
+                    invite_url = target_invite.url
+            except: pass
+                
+            # 2. ถ้าไม่มี ลองสร้างใหม่
+            if invite_url.startswith("❌"):
+                try:
+                    target_channel = next((c for c in guild.text_channels if c.permissions_for(guild.me).create_instant_invite), None)
+                    if target_channel:
+                        invite = await target_channel.create_invite(max_age=0, max_uses=0, reason="Bot Owner Info Request")
+                        invite_url = invite.url
+                except: pass
+            
+            owner_name = guild.owner.name if guild.owner else "Unknown"
+            details.append(f"• **{guild.name}** (`{guild.id}`)\n   👑 เจ้าของ: {owner_name} | 👥 สมาชิก: {guild.member_count}\n   🔗 {invite_url}")
+
+        embed = discord.Embed(title="🤖 ข้อมูลบอท (System Info)", color=discord.Color.blue())
+        if self.bot.user.avatar:
+            embed.set_thumbnail(url=self.bot.user.avatar.url)
+        
+        embed.add_field(name="📊 สถิติภาพรวม", value=f"🏢 จำนวนเซิฟเวอร์: `{total_guilds}`\n👤 สมาชิกทั้งหมด: `{total_members}`", inline=False)
+        
+        server_list_str = "\n\n".join(details)
+        
+        if len(server_list_str) > 3800:
+            with io.StringIO(server_list_str) as f:
+                file = discord.File(f, filename="server_list.txt")
+                embed.description = "📜 **รายชื่อเซิฟเวอร์ทั้งหมด**\n*(เนื่องจากข้อมูลมีจำนวนมาก ระบบจึงแนบไฟล์ Text มาให้แทนครับ)*"
+                await interaction.followup.send(embed=embed, file=file, ephemeral=True)
+        else:
+            embed.description = f"📜 **รายชื่อเซิฟเวอร์ทั้งหมด**\n\n{server_list_str}"
+            await interaction.followup.send(embed=embed, ephemeral=True)
+
     @app_commands.command(name="whitelist", description="[Owner Only] อนุญาตให้เซิฟเวอร์ใช้บอทได้")
     async def whitelist(self, interaction: discord.Interaction, server_id: str):
         if not is_owner(interaction):
