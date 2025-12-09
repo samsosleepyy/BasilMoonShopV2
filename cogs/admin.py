@@ -53,7 +53,7 @@ class AdminSystem(commands.Cog):
     # 🔒 OWNER ONLY COMMANDS
     # =========================================
 
-    # [FIXED] เปลี่ยนชื่อฟังก์ชันจาก bot_info เป็น info_bot
+    # [FIXED] เปลี่ยนชื่อฟังก์ชันจาก bot_info เป็น info_bot (สำคัญมาก!)
     @app_commands.command(name="bot-info", description="[Owner Only] ดูข้อมูลบอทและรายชื่อเซิฟเวอร์ทั้งหมด")
     async def info_bot(self, interaction: discord.Interaction):
         if not is_owner(interaction):
@@ -167,7 +167,7 @@ class AdminSystem(commands.Cog):
             
             await interaction.followup.send(f"✅ **ตั้งค่า Auto Backup เรียบร้อย!**\nจะส่งไฟล์ Backup เข้าห้อง {autobackup_log.mention} ของเซิร์ฟเวอร์นี้ ทุก 1 ชั่วโมง", ephemeral=True)
             file = discord.File(DATA_FILE, filename=filename)
-            await autobackup_log.send(f"📦 **Backup เริ่มต้น** (Setup by {interaction.user.mention})", file=file)
+            await autobackup_log.send(f"📦 **Backup เริ่มต้น**", file=file)
         else:
             file = discord.File(DATA_FILE, filename=filename)
             await interaction.followup.send("📦 **ไฟล์ Backup ข้อมูลปัจจุบัน**", file=file, ephemeral=True)
