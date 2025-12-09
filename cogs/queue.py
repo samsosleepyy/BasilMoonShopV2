@@ -11,7 +11,6 @@ import datetime
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import MESSAGES, load_data, save_data, is_admin_or_has_permission, DATA_FILE
 
-# Cache สำหรับเก็บข้อมูลระหว่าง Setup
 queue_setup_cache = {}
 
 class QueueSystem(commands.Cog):
@@ -21,18 +20,17 @@ class QueueSystem(commands.Cog):
                       "https://www.googleapis.com/auth/drive.file", "https://www.googleapis.com/auth/drive"]
         self.creds_file = "credentials.json" 
 
-    # เมื่อบอทเริ่มทำงาน (หรือ Reload) ให้กู้คืนระบบคิวทันที
+    # [FIXED] ใช้ create_task
     async def cog_load(self):
-        await self.restore_queue_system()
+        self.bot.loop.create_task(self.restore_queue_system())
 
     async def restore_queue_system(self):
+        await self.bot.wait_until_ready()
         print("🔄 Restoring Queue System...")
         data = load_data()
         
-        # 1. กู้คืนไฟล์ credentials.json จาก Database
         if "google_credentials" in data and data["google_credentials"]:
             try:
-                # แปลง JSON String กลับเป็น Dict แล้วเขียนลงไฟล์
                 creds_dict = json.loads(data["google_credentials"])
                 with open(self.creds_file, "w", encoding="utf-8") as f:
                     json.dump(creds_dict, f, indent=4)
@@ -40,18 +38,15 @@ class QueueSystem(commands.Cog):
             except Exception as e:
                 print(f"❌ Failed to restore credentials: {e}")
 
-        # 2. กู้คืนปุ่มกด (Persistent Views)
         if "queue_views" in data:
             count = 0
             for msg_id, sheets_config in data["queue_views"].items():
                 try:
-                    # สร้าง View เดิมขึ้นมาใหม่
                     view = QueueMainView(sheets_config)
-                    # สั่งให้บอทเริ่มฟัง View นี้อีกครั้ง (ไม่ต้องส่งข้อความใหม่)
-                    self.bot.add_view(view) 
+                    self.bot.add_view(view, message_id=int(msg_id))
                     count += 1
                 except Exception as e:
-                    print(f"Error restoring view {msg_id}: {e}")
+                    print(f"Error restoring queue view {msg_id}: {e}")
             print(f"✅ Restored {count} queue views.")
 
     @app_commands.command(name="setup-queue", description="ติดตั้งระบบเช็คคิวงาน (รองรับสูงสุด 4 Sheets)")
@@ -59,7 +54,6 @@ class QueueSystem(commands.Cog):
         if not is_admin_or_has_permission(interaction):
             return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
         
-        # เริ่มต้น Cache
         queue_setup_cache[interaction.user.id] = {
             "channel_id": None,
             "image_url": None,
@@ -80,6 +74,10 @@ class QueueSystem(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(QueueSystem(bot))
+
+# ... (ส่วน View ของ Queue ใช้ของเดิมได้เลยครับ โค้ดส่วนล่างถูกต้องแล้ว) ...
+# เพื่อความสะดวก คุณใช้โค้ด Queue จากข้อความก่อนหน้าแล้วแก้แค่ส่วน cog_load ได้เลยครับ
+# หรือจะให้ผมแปะโค้ด Queue เต็มๆ อีกรอบก็ได้ครับ (บอกได้เลย)
 
 # =========================================
 # STEP 1: หน้าตาและช่อง
@@ -206,7 +204,6 @@ class QueueSetupStep2(discord.ui.View):
 
         await interaction.response.defer(ephemeral=True)
 
-        # 1. บันทึกไฟล์ Key (Physical File)
         try:
             json_content = json.loads(cache["json_key"])
             with open("credentials.json", "w", encoding="utf-8") as f:
@@ -214,11 +211,9 @@ class QueueSetupStep2(discord.ui.View):
         except Exception as e:
             return await interaction.followup.send(f"❌ บันทึกไฟล์ Key ไม่สำเร็จ: {e}", ephemeral=True)
 
-        # 2. เตรียมข้อมูล
         final_title = cache["embed_title"]
         final_desc = cache["embed_desc"] if cache["embed_desc"] else "กดปุ่มด้านล่างเพื่อตรวจสอบรายละเอียดงานและสถานะของคุณ"
         
-        # ลองดึงชื่อจาก Sheet แรกถ้าไม่มี Title
         if not final_title:
             try:
                 scope = ["https://spreadsheets.google.com/feeds", 'https://www.googleapis.com/auth/spreadsheets',
@@ -238,7 +233,6 @@ class QueueSetupStep2(discord.ui.View):
                 final_title = "📋 เช็คสถานะคิวงาน" 
                 print(f"Fetch title error: {e}")
 
-        # 3. ส่ง Embed และ ปุ่ม
         target_channel = interaction.guild.get_channel(cache["channel_id"])
         if target_channel:
             embed = discord.Embed(
@@ -256,18 +250,13 @@ class QueueSetupStep2(discord.ui.View):
             view = QueueMainView(sheets_config)
             msg = await target_channel.send(embed=embed, view=view)
             
-            # === [IMPORTANT] บันทึกลง Database เพื่อความคงอยู่ ===
             data = load_data()
-            
-            # บันทึก Google Key ไว้ใน DB ด้วย (เพื่อให้ /restore กู้คืนไฟล์นี้ได้)
             data["google_credentials"] = cache["json_key"]
             
-            # บันทึก Config ของปุ่มไว้ โดยใช้ Message ID เป็น Key
             if "queue_views" not in data: data["queue_views"] = {}
             data["queue_views"][str(msg.id)] = sheets_config
             
             save_data(data)
-            # ====================================================
             
             await interaction.followup.send(f"✅ **ติดตั้งเสร็จสิ้น!** สร้างปุ่มจำนวน {len(sheets_config)} ปุ่ม เรียบร้อยครับ", ephemeral=True)
         else:
