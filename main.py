@@ -14,7 +14,7 @@ class MyBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents, help_command=None)
 
     async def setup_hook(self):
-        # [UPDATED] เพิ่ม try-except เพื่อกันบอทล่มถ้าโค้ดไฟล์ไหนพัง
+        # [UPDATED] เพิ่มระบบกันล่ม
         for filename in os.listdir('./cogs'):
             if filename.endswith('.py'):
                 try:
