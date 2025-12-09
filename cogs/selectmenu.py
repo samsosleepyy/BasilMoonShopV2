@@ -14,6 +14,22 @@ class SelectSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
     
+    # [NEW] Auto-Load: กู้คืนเมนูทั้งหมด
+    async def cog_load(self):
+        await self.bot.wait_until_ready()
+        print("🔄 Restoring Select Menus...")
+        data = load_data()
+        count = 0
+        if "select_menus" in data:
+            for msg_id, options in data["select_menus"].items():
+                try:
+                    view = SelectMenuMainView(options)
+                    self.bot.add_view(view, message_id=int(msg_id))
+                    count += 1
+                except Exception as e:
+                    print(f"Failed to restore select menu {msg_id}: {e}")
+        print(f"✅ Restored {count} select menus.")
+
     @app_commands.command(name="select-menu", description=MESSAGES["desc_selectmenu"])
     async def select_menu(self, interaction: discord.Interaction, channel: discord.TextChannel, text: str, imagelink: str = None):
         if not is_admin_or_has_permission(interaction):
@@ -37,7 +53,6 @@ class SelectSystem(commands.Cog):
         
         await interaction.response.defer(ephemeral=True)
 
-        # 1. แกะลิ้งค์และดึงข้อมูล Message เดิม
         try:
             parts = message_link.split('/')
             msg_id = int(parts[-1])
@@ -47,7 +62,6 @@ class SelectSystem(commands.Cog):
             if not channel: channel = await interaction.guild.fetch_channel(chan_id)
             target_msg = await channel.fetch_message(msg_id)
             
-            # ดึง Text และ Image จาก Embed เดิม
             current_embed = target_msg.embeds[0] if target_msg.embeds else None
             current_text = current_embed.description if current_embed else "..."
             current_image = current_embed.image.url if current_embed and current_embed.image else None
@@ -57,7 +71,6 @@ class SelectSystem(commands.Cog):
         
         data = load_data()
         
-        # ตรวจสอบข้อมูลตัวเลือก (Options)
         if str(msg_id) in data["select_menus"]:
             current_options = data["select_menus"][str(msg_id)]
             msg_content = f"🛠️ **แก้ไข Select Menu**\n🔗 {message_link}\n(🟢=มีข้อมูลตัวเลือก, ⚫=ว่าง)"
@@ -65,7 +78,6 @@ class SelectSystem(commands.Cog):
             current_options = []
             msg_content = f"⚠️ **ไม่พบข้อมูลตัวเลือกเดิม (กู้คืน)**\nระบบจะให้คุณตั้งค่าใหม่ทับโพสต์เดิม\n🔗 {message_link}"
 
-        # 2. โหลดข้อมูลเข้า Cache
         setup_cache[interaction.user.id] = {
             "mode": "edit",
             "target_message_id": msg_id,
@@ -75,7 +87,6 @@ class SelectSystem(commands.Cog):
             "main_image": current_image
         }
         
-        # 3. สร้าง View
         view = SelectEditView(interaction.user.id, current_options)
         await interaction.followup.send(msg_content, view=view, ephemeral=True)
 
@@ -83,23 +94,18 @@ async def setup(bot):
     await bot.add_cog(SelectSystem(bot))
 
 # =========================================
-# MODALS (ต้องอยู่ก่อน Views)
+# MODALS
 # =========================================
 
-# Modal สำหรับแก้ไขข้อความหลัก (Embed)
 class SelectEditMainModal(discord.ui.Modal, title="แก้ไขข้อความหลัก (Embed)"):
     def __init__(self, user_id):
         super().__init__()
         self.user_id = user_id
-        
         cache = setup_cache.get(user_id)
-        # ใช้ or "" เพื่อป้องกันค่า None
         old_text = cache.get("main_text") or ""
         old_img = cache.get("main_image") or ""
-
         self.main_text = discord.ui.TextInput(label="เนื้อหาหลัก", style=discord.TextStyle.paragraph, default=old_text, required=True)
         self.main_image = discord.ui.TextInput(label="ลิ้งค์รูปภาพปก (Optional)", default=old_img, required=False)
-        
         self.add_item(self.main_text)
         self.add_item(self.main_image)
 
@@ -108,10 +114,8 @@ class SelectEditMainModal(discord.ui.Modal, title="แก้ไขข้อค�
         if cache:
             cache["main_text"] = self.main_text.value
             cache["main_image"] = self.main_image.value if self.main_image.value.strip() else None
-        
         await interaction.response.send_message("✅ อัปเดตข้อความในฉบับร่างแล้ว (อย่าลืมกด 'บันทึกการแก้ไข' เพื่อใช้งานจริง)", ephemeral=True)
 
-# Modal สำหรับสร้างใหม่
 class SelectOptionModal(discord.ui.Modal):
     def __init__(self, user_id, index, parent_view):
         super().__init__(title=MESSAGES["sel_modal_title"].format(n=index+1))
@@ -151,7 +155,6 @@ class SelectOptionModal(discord.ui.Modal):
         
         await interaction.response.edit_message(view=self.parent_view)
 
-# Modal สำหรับแก้ไข/กู้คืนตัวเลือก
 class SelectEditOptionModal(discord.ui.Modal):
     def __init__(self, user_id, index, parent_view):
         super().__init__(title=f"แก้ไขตัวเลือกที่ {index+1}")
@@ -207,7 +210,6 @@ class SelectEditOptionModal(discord.ui.Modal):
                     break
         
         await interaction.response.edit_message(view=self.parent_view)
-
 
 # =========================================
 # VIEWS
@@ -310,7 +312,6 @@ class SelectEditView(discord.ui.View):
         
         existing_indices = {opt['index'] for opt in current_options}
         
-        # ปุ่ม 1-20
         for i in range(20):
             row = i // 5
             style = discord.ButtonStyle.success if i in existing_indices else discord.ButtonStyle.secondary
@@ -318,12 +319,10 @@ class SelectEditView(discord.ui.View):
             btn.callback = self.edit_callback(i)
             self.add_item(btn)
 
-        # [NEW] ปุ่มแก้ไขข้อความหลัก (ใส่ row=4)
         edit_embed_btn = discord.ui.Button(label="✏️ แก้ไขข้อความหลัก", style=discord.ButtonStyle.primary, row=4)
         edit_embed_btn.callback = self.edit_embed_callback
         self.add_item(edit_embed_btn)
 
-        # ปุ่มบันทึก (ใส่ row=4)
         finish_btn = discord.ui.Button(label="บันทึกการแก้ไข 💾", style=discord.ButtonStyle.success, row=4)
         finish_btn.callback = self.finish_callback
         self.add_item(finish_btn)
@@ -358,9 +357,8 @@ class SelectEditView(discord.ui.View):
         
         sorted_options = sorted(cache["options"], key=lambda x: x['index'])
         
-        # สร้าง Embed ใหม่
         new_text = cache.get("main_text") or "..."
-        new_image = cache.get("main_image") # can be None
+        new_image = cache.get("main_image")
         
         new_embed = discord.Embed(description=new_text, color=discord.Color.blue())
         if new_image:
