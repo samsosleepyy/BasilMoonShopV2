@@ -53,9 +53,10 @@ class AdminSystem(commands.Cog):
     # 🔒 OWNER ONLY COMMANDS
     # =========================================
 
+    # [FIXED] เปลี่ยนชื่อฟังก์ชันจาก bot_info เป็น info_bot เพื่อแก้ Error
     @app_commands.command(name="bot-info", description="[Owner Only] ดูข้อมูลบอทและรายชื่อเซิฟเวอร์ทั้งหมด")
-    async def bot_info(self, interaction: discord.Interaction):
-        # [CHECK] ตรวจสอบว่าเป็น Owner หรือไม่ (คนอื่นใช้ไม่ได้)
+    async def info_bot(self, interaction: discord.Interaction):
+        # [CHECK] ตรวจสอบว่าเป็น Owner หรือไม่
         if not is_owner(interaction):
             return await interaction.response.send_message(MESSAGES["owner_only"], ephemeral=True)
         
@@ -105,7 +106,6 @@ class AdminSystem(commands.Cog):
 
     @app_commands.command(name="whitelist", description="[Owner Only] อนุญาตให้เซิฟเวอร์ใช้บอทได้")
     async def whitelist(self, interaction: discord.Interaction, server_id: str):
-        # [CHECK] Owner Only
         if not is_owner(interaction):
             return await interaction.response.send_message(MESSAGES["owner_only"], ephemeral=True)
         
@@ -122,7 +122,6 @@ class AdminSystem(commands.Cog):
     @app_commands.command(name="restore", description="[Owner Only] กู้คืนข้อมูลจากไฟล์ data.json")
     @app_commands.describe(file="ไฟล์ data.json ที่ต้องการกู้คืน")
     async def restore(self, interaction: discord.Interaction, file: discord.Attachment):
-        # [CHECK] Owner Only
         if not is_owner(interaction):
             return await interaction.response.send_message(MESSAGES["owner_only"], ephemeral=True)
         
@@ -170,7 +169,7 @@ class AdminSystem(commands.Cog):
             
             await interaction.followup.send(f"✅ **ตั้งค่า Auto Backup เรียบร้อย!**\nจะส่งไฟล์ Backup เข้าห้อง {autobackup_log.mention} ของเซิร์ฟเวอร์นี้ ทุก 1 ชั่วโมง", ephemeral=True)
             file = discord.File(DATA_FILE, filename=filename)
-            await autobackup_log.send(f"📦 **Backup เริ่มต้น**", file=file)
+            await autobackup_log.send(f"📦 **Backup เริ่มต้น** (Setup by {interaction.user.mention})", file=file)
         else:
             file = discord.File(DATA_FILE, filename=filename)
             await interaction.followup.send("📦 **ไฟล์ Backup ข้อมูลปัจจุบัน**", file=file, ephemeral=True)
