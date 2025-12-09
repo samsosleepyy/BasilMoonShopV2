@@ -15,40 +15,38 @@ class AuctionSystem(commands.Cog):
         self.active_auctions = {}
         self.bot.loop.create_task(self.auction_loop())
 
-    # [NEW] Auto-Load: กู้คืนการประมูล
+    # [FIXED] ใช้ create_task เพื่อไม่ให้บล็อกการเริ่มบอท
     async def cog_load(self):
+        self.bot.loop.create_task(self.restore_auction_views())
+
+    async def restore_auction_views(self):
         await self.bot.wait_until_ready()
         print("🔄 Restoring Auction Views...")
         data = load_data()
         
-        # โหลดข้อมูล Active Auctions กลับเข้า Memory
         if "active_auctions" in data:
             for chan_id, auction_data in data["active_auctions"].items():
                 try:
-                    # แปลงเวลา (string -> datetime)
                     if isinstance(auction_data['end_time'], str):
                         auction_data['end_time'] = datetime.datetime.fromtimestamp(float(auction_data['end_time_ts']))
                     
                     self.active_auctions[int(chan_id)] = auction_data
                     
-                    # กู้คืนปุ่ม (ใช้ message_id)
                     if auction_data.get('message_id'):
                         view = AuctionControlView(auction_data['seller_id'], self)
                         self.bot.add_view(view, message_id=auction_data['message_id'])
-                        
                 except Exception as e:
                     print(f"Failed to restore auction {chan_id}: {e}")
         
         print(f"✅ Restored {len(self.active_auctions)} active auctions.")
 
     async def save_active_auctions(self):
-        # ฟังก์ชันช่วยเซฟลง JSON (ต้องแปลง datetime เป็น timestamp ก่อนเซฟ)
         data = load_data()
         serializable_auctions = {}
         for cid, adata in self.active_auctions.items():
             copy_data = adata.copy()
             copy_data['end_time_ts'] = copy_data['end_time'].timestamp()
-            copy_data['end_time'] = str(copy_data['end_time']) # แค่ไว้ดูเล่น ใช้จริงใช้ ts
+            copy_data['end_time'] = str(copy_data['end_time'])
             serializable_auctions[str(cid)] = copy_data
             
         data["active_auctions"] = serializable_auctions
@@ -67,7 +65,6 @@ class AuctionSystem(commands.Cog):
             for rid in to_remove:
                 if rid in self.active_auctions:
                     del self.active_auctions[rid]
-                    # [NEW] Save เมื่อลบ
                     await self.save_active_auctions()
             await asyncio.sleep(5)
 
@@ -109,7 +106,6 @@ class AuctionSystem(commands.Cog):
                 sent_msg = await message.reply(response_text)
                 auction_data['last_bid_msg_id'] = sent_msg.id
                 
-                # [NEW] Save ทุกครั้งที่มีการบิด
                 await self.save_active_auctions()
                 
                 if (datetime.datetime.now().timestamp() - auction_data.get('last_rename', 0)) > 30:
@@ -186,7 +182,6 @@ class AuctionSystem(commands.Cog):
         view = TransactionView(seller_id, winner_id, auction_data, self.bot, count)
         await channel.send(content=winner_mention, embed=embed, view=view)
 
-    # ... (ส่วนสร้าง Embed, Preview เหมือนเดิม) ...
     async def create_final_style_embed(self, auction_data, is_preview=False, custom_end_timestamp=None):
         if custom_end_timestamp:
             timestamp = custom_end_timestamp
@@ -382,14 +377,18 @@ class ApprovalView(discord.ui.View):
         
         end_time = datetime.datetime.now() + datetime.timedelta(minutes=self.auction_data["duration_minutes"])
         timestamp = int(end_time.timestamp())
+        
+        # ส่ง Embed ก่อน (เพื่อเอา ID)
         main_embed = await self.cog.create_final_style_embed(self.auction_data, is_preview=False, custom_end_timestamp=timestamp)
         embed_msg = await auction_channel.send(embed=main_embed)
         
+        # ส่งรูป + ปุ่ม (ย้ายปุ่มมาไว้ที่ข้อความรูปภาพ)
         files_to_send = await get_files_from_urls(self.auction_data["img_product_urls"])
         view = AuctionControlView(self.auction_data['seller_id'], self.cog)
+        
         if files_to_send:
             await auction_channel.send(files=files_to_send, view=view)
-            msg_id = embed_msg.id
+            msg_id = embed_msg.id # บันทึก ID ของ Embed หลัก
         else:
             await embed_msg.edit(view=view)
             msg_id = embed_msg.id
@@ -397,7 +396,6 @@ class ApprovalView(discord.ui.View):
         self.auction_data.update({'channel_id': auction_channel.id, 'current_price': self.auction_data['start_price'],'end_time': end_time, 'winner_id': None, 'message_id': msg_id, 'active': True, 'last_bid_msg_id': None})
         self.cog.active_auctions[auction_channel.id] = self.auction_data
         
-        # [NEW] Save ทันทีหลัง Approve
         await self.cog.save_active_auctions()
         
         await interaction.followup.send(MESSAGES["auc_admin_approve_log"].format(channel=auction_channel.mention))
@@ -464,12 +462,14 @@ class ConfirmFinalView(discord.ui.View):
             dm_msg = MESSAGES["auc_dm_success"]
         except: dm_msg = MESSAGES["auc_dm_fail"].format(user=f"<@{self.auction_data['winner_id']}>")
         await interaction.followup.send(f"{dm_msg}\n{MESSAGES['msg_channel_ready_delete']}", ephemeral=True)
+        
         if self.auction_data['log_id']:
             log = self.bot.get_channel(self.auction_data['log_id'])
             data = load_data()
             embed = discord.Embed(description=MESSAGES["auc_success_log"].format(count=self.count, seller=f"<@{self.auction_data['seller_id']}>", winner=f"<@{self.auction_data['winner_id']}>", price=self.auction_data['current_price']), color=discord.Color.green())
             files_to_send = await get_files_from_urls(self.auction_data["img_product_urls"])
             await log.send(embed=embed, files=files_to_send)
+        
         await self.channel.send(MESSAGES["msg_channel_ready_delete"], view=AdminCloseView())
 
 class CancelReasonModal(discord.ui.Modal, title=MESSAGES["auc_modal_cancel_title"]):
@@ -484,6 +484,7 @@ class CancelReasonModal(discord.ui.Modal, title=MESSAGES["auc_modal_cancel_title
             embed = discord.Embed(description=MESSAGES["auc_cancel_log"].format(count=self.count, seller=f"<@{self.auction_data['seller_id']}>", user=interaction.user.mention, reason=self.reason.value), color=discord.Color.red())
             await log.send(embed=embed)
         await interaction.response.send_message(MESSAGES["auc_msg_cancel_success"], ephemeral=True)
+        
         await self.channel.send(MESSAGES["msg_channel_ready_delete"], view=AdminCloseView())
 
 async def setup(bot):
