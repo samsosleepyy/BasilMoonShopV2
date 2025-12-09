@@ -21,23 +21,24 @@ class QueueSystem(commands.Cog):
                       "https://www.googleapis.com/auth/drive.file", "https://www.googleapis.com/auth/drive"]
         self.creds_file = "credentials.json" 
 
-    @app_commands.command(name="setup-queue", description="ติดตั้งระบบเช็คคิวงาน (เชื่อมต่อ Google Sheets)")
+    @app_commands.command(name="setup-queue", description="ติดตั้งระบบเช็คคิวงาน (รองรับสูงสุด 4 Sheets)")
     async def setup_queue(self, interaction: discord.Interaction):
         if not is_admin_or_has_permission(interaction):
             return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
         
-        # [UPDATED] เพิ่ม button_label ใน cache
+        # เริ่มต้น Cache
         queue_setup_cache[interaction.user.id] = {
             "channel_id": None,
             "image_url": None,
-            "sheet_url": None,
+            "embed_title": None, # เก็บ Custom Title
             "json_key": None,
-            "button_label": "🔍 เช็คคิวงานของฉัน" # ค่า Default
+            # เก็บข้อมูล Sheet สูงสุด 4 อัน {index: {label, url}}
+            "sheets": {} 
         }
         
         embed = discord.Embed(
             title="🛠️ Setup Queue System (Step 1/2)",
-            description="ตั้งค่าช่องและหน้าตาของปุ่มเช็คคิว\n\n1. เลือกช่องที่จะส่งข้อความ\n2. (Optional) ใส่รูปภาพ / แก้ไขข้อความปุ่ม\n3. กดถัดไป",
+            description="ตั้งค่าหน้าตาของ Embed\n\n1. เลือกช่องที่จะส่งข้อความ\n2. (Optional) ใส่รูปภาพ / ตั้งชื่อหัวข้อ Embed\n3. กดถัดไป",
             color=discord.Color.blue()
         )
         
@@ -66,11 +67,11 @@ class QueueSetupStep1(discord.ui.View):
         if interaction.user.id != self.user_id: return
         await interaction.response.send_modal(QueueImageModal(self.user_id))
 
-    # [NEW] ปุ่มแก้ไขข้อความปุ่ม
-    @discord.ui.button(label="✏️ แก้ไขข้อความปุ่ม", style=discord.ButtonStyle.secondary, row=1)
-    async def edit_label(self, interaction: discord.Interaction, button: discord.ui.Button):
+    # [UPDATED] เปลี่ยนเป็นแก้ไข Title Embed
+    @discord.ui.button(label="📝 แก้ไข Title Embed", style=discord.ButtonStyle.secondary, row=1)
+    async def edit_title(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id: return
-        await interaction.response.send_modal(QueueButtonLabelModal(self.user_id))
+        await interaction.response.send_modal(QueueTitleModal(self.user_id))
 
     @discord.ui.button(label="ถัดไป ➡️", style=discord.ButtonStyle.primary, row=2)
     async def next_step(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -79,16 +80,12 @@ class QueueSetupStep1(discord.ui.View):
             return await interaction.response.send_message("❌ กรุณาเลือกช่องก่อนครับ", ephemeral=True)
         
         embed = discord.Embed(
-            title="🛠️ Setup Queue System (Step 2/2): Google Sheets",
+            title="🛠️ Setup Queue System (Step 2/2): ตั้งค่า Sheet",
             description=(
-                "ขั้นตอนการเชื่อมต่อ Google Sheets\n\n"
-                "**1. เตรียม Google Cloud & Service Account**\n"
-                "• สร้าง Project และ Service Account ใน Google Cloud Console\n"
-                "• เปิดใช้งาน API: `Google Sheets API` และ `Google Drive API`\n"
-                "• ดาวน์โหลดไฟล์ JSON Key มาเก็บไว้\n\n"
-                "**2. แชร์ Sheets ให้บอท**\n"
-                "• ก๊อปปี้ `client_email` จากไฟล์ JSON ไปกดปุ่ม **Share (Editor)** ใน Google Sheets ของคุณ\n\n"
-                "✅ **เมื่อทำครบแล้ว กดปุ่มด้านล่างเพื่อกรอกข้อมูลครับ**"
+                "**การตั้งค่า Google Sheets**\n"
+                "• คุณสามารถเพิ่มได้สูงสุด **4 ลิ้งค์** (4 ปุ่ม)\n"
+                "• กดปุ่ม 'ตั้งค่า Sheet' เพื่อกรอก ชื่อปุ่ม และ ลิ้งค์\n"
+                "• อย่าลืมวาง JSON Key ก่อนกดเสร็จสิ้น"
             ),
             color=discord.Color.gold()
         )
@@ -104,46 +101,54 @@ class QueueImageModal(discord.ui.Modal, title="ลิ้งค์รูปภา
         queue_setup_cache[self.user_id]["image_url"] = self.url.value
         await interaction.response.send_message("✅ บันทึกรูปภาพแล้ว", ephemeral=True)
 
-# [NEW] Modal แก้ไขข้อความปุ่ม
-class QueueButtonLabelModal(discord.ui.Modal, title="แก้ไขข้อความบนปุ่ม"):
-    label = discord.ui.TextInput(label="ข้อความ", placeholder="เช่น เช็คคิว, ตรวจสอบสถานะ", required=True)
+class QueueTitleModal(discord.ui.Modal, title="ตั้งชื่อหัวข้อ Embed"):
+    title_input = discord.ui.TextInput(label="หัวข้อ (Title)", placeholder="เช่น รายการคิวงานทั้งหมด", required=True)
     def __init__(self, user_id):
         super().__init__()
         self.user_id = user_id
     async def on_submit(self, interaction: discord.Interaction):
-        queue_setup_cache[self.user_id]["button_label"] = self.label.value
-        await interaction.response.send_message(f"✅ เปลี่ยนข้อความปุ่มเป็น: **{self.label.value}**", ephemeral=True)
+        queue_setup_cache[self.user_id]["embed_title"] = self.title_input.value
+        await interaction.response.send_message(f"✅ ตั้งชื่อหัวข้อเป็น: **{self.title_input.value}**", ephemeral=True)
 
 # =========================================
-# STEP 2: Google Sheets & JSON Key
+# STEP 2: Google Sheets Inputs (Split Modals)
 # =========================================
 class QueueSetupStep2(discord.ui.View):
     def __init__(self, user_id):
         super().__init__(timeout=None)
         self.user_id = user_id
 
-    @discord.ui.button(label="1. กรอกลิ้งค์ Google Sheets", style=discord.ButtonStyle.secondary, row=0)
-    async def input_sheet(self, interaction: discord.Interaction, button: discord.ui.Button):
+    # ปุ่มกรอก Sheet 1-2
+    @discord.ui.button(label="ตั้งค่า Sheet 1-2", style=discord.ButtonStyle.secondary, row=0)
+    async def input_sheet_1_2(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id: return
-        await interaction.response.send_modal(QueueSheetUrlModal(self.user_id))
+        await interaction.response.send_modal(QueueSheetsModalPart1(self.user_id))
 
-    @discord.ui.button(label="2. วางโค้ด JSON Key", style=discord.ButtonStyle.secondary, row=0)
+    # ปุ่มกรอก Sheet 3-4
+    @discord.ui.button(label="ตั้งค่า Sheet 3-4", style=discord.ButtonStyle.secondary, row=0)
+    async def input_sheet_3_4(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id: return
+        await interaction.response.send_modal(QueueSheetsModalPart2(self.user_id))
+
+    @discord.ui.button(label="วางโค้ด JSON Key", style=discord.ButtonStyle.secondary, row=1)
     async def input_json(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id: return
         await interaction.response.send_modal(QueueJsonModal(self.user_id))
 
-    @discord.ui.button(label="เสร็จสิ้น (สร้างปุ่ม) ✅", style=discord.ButtonStyle.success, row=1)
+    @discord.ui.button(label="เสร็จสิ้น (สร้างปุ่ม) ✅", style=discord.ButtonStyle.success, row=2)
     async def finish(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id: return
         cache = queue_setup_cache.get(self.user_id)
         
-        if not cache["sheet_url"]:
-            return await interaction.response.send_message("❌ ยังไม่ได้กรอกลิ้งค์ Google Sheets", ephemeral=True)
+        # เช็คว่ามีข้อมูล Sheet อย่างน้อย 1 อันไหม
+        if not cache["sheets"]:
+            return await interaction.response.send_message("❌ กรุณาตั้งค่า Sheet อย่างน้อย 1 อันครับ", ephemeral=True)
         if not cache["json_key"]:
             return await interaction.response.send_message("❌ ยังไม่ได้ใส่โค้ด JSON Key", ephemeral=True)
 
         await interaction.response.defer(ephemeral=True)
 
+        # 1. บันทึกไฟล์ Credentials
         try:
             json_content = json.loads(cache["json_key"])
             with open("credentials.json", "w", encoding="utf-8") as f:
@@ -151,50 +156,122 @@ class QueueSetupStep2(discord.ui.View):
         except Exception as e:
             return await interaction.followup.send(f"❌ บันทึกไฟล์ Key ไม่สำเร็จ: {e}", ephemeral=True)
 
-        sheet_title = "เช็คสถานะคิวงาน" 
-        try:
-            scope = ["https://spreadsheets.google.com/feeds", 'https://www.googleapis.com/auth/spreadsheets',
-                     "https://www.googleapis.com/auth/drive.file", "https://www.googleapis.com/auth/drive"]
-            creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
-            client = gspread.authorize(creds)
-            sheet = client.open_by_url(cache["sheet_url"])
-            sheet_title = sheet.title
-            
-            if "Queue" in sheet_title:
-                sheet_title = sheet_title.replace("Queue", "คิว")
+        # 2. จัดเตรียมข้อมูล Title
+        final_title = cache["embed_title"]
+        
+        # ถ้าไม่มี Custom Title ให้พยายามดึงจาก Sheet แรก
+        if not final_title:
+            try:
+                scope = ["https://spreadsheets.google.com/feeds", 'https://www.googleapis.com/auth/spreadsheets',
+                         "https://www.googleapis.com/auth/drive.file", "https://www.googleapis.com/auth/drive"]
+                creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+                client = gspread.authorize(creds)
                 
-        except Exception as e:
-            await interaction.followup.send(f"⚠️ ไม่สามารถดึงชื่อไฟล์ Google Sheets ได้ (ใช้ชื่อ Default แทน): {e}", ephemeral=True)
+                # ดึง Sheet แรกที่มีข้อมูล
+                first_sheet_key = sorted(cache["sheets"].keys())[0] # key is int index
+                first_sheet_url = cache["sheets"][first_sheet_key]["url"]
+                
+                sheet = client.open_by_url(first_sheet_url)
+                fetched_title = sheet.title
+                if "Queue" in fetched_title:
+                    fetched_title = fetched_title.replace("Queue", "คิว")
+                final_title = f"📋 {fetched_title}"
+            except Exception as e:
+                final_title = "📋 เช็คสถานะคิวงาน" # Fallback สุดท้าย
+                print(f"Fetch title error: {e}")
 
+        # 3. สร้าง Embed และ ปุ่ม
         target_channel = interaction.guild.get_channel(cache["channel_id"])
         if target_channel:
             embed = discord.Embed(
-                title=f"📋 {sheet_title}", 
-                description=f"กดปุ่ม **{cache['button_label']}** ด้านล่างเพื่อตรวจสอบสถานะงานของคุณ",
+                title=final_title,
+                description="กดปุ่มด้านล่างเพื่อตรวจสอบรายละเอียดงานและสถานะของคุณ",
                 color=discord.Color.green()
             )
             if cache["image_url"]:
                 embed.set_image(url=cache["image_url"])
             
-            # [UPDATED] ส่ง button_label ที่ตั้งค่าไว้ไปให้ View
-            view = QueueMainView(cache["sheet_url"], cache["button_label"])
+            # เตรียมข้อมูลปุ่มส่งให้ View
+            # เรียงตาม Index 1, 2, 3, 4
+            sheets_config = []
+            for i in sorted(cache["sheets"].keys()):
+                sheets_config.append(cache["sheets"][i])
+
+            view = QueueMainView(sheets_config)
             await target_channel.send(embed=embed, view=view)
             
-            await interaction.followup.send(f"✅ **ติดตั้งเสร็จสิ้น!** เชื่อมต่อกับ Sheet: **{sheet_title}** เรียบร้อยครับ", ephemeral=True)
+            await interaction.followup.send(f"✅ **ติดตั้งเสร็จสิ้น!** สร้างปุ่มจำนวน {len(sheets_config)} ปุ่ม เรียบร้อยครับ", ephemeral=True)
         else:
             await interaction.followup.send("❌ หาห้องเป้าหมายไม่เจอ", ephemeral=True)
             
         if self.user_id in queue_setup_cache:
             del queue_setup_cache[self.user_id]
 
-class QueueSheetUrlModal(discord.ui.Modal, title="Google Sheets Link"):
-    url = discord.ui.TextInput(label="URL", placeholder="https://docs.google.com/spreadsheets/...", required=True)
+# Modal กรอก Sheet 1-2
+class QueueSheetsModalPart1(discord.ui.Modal, title="ตั้งค่า Sheet 1 และ 2"):
+    label1 = discord.ui.TextInput(label="ชื่อปุ่มที่ 1", placeholder="เช่น เช็คงานวาด", required=True)
+    url1 = discord.ui.TextInput(label="ลิ้งค์ Sheet 1", placeholder="https://docs.google.com...", required=True)
+    
+    label2 = discord.ui.TextInput(label="ชื่อปุ่มที่ 2 (เว้นว่างถ้าไม่มี)", required=False)
+    url2 = discord.ui.TextInput(label="ลิ้งค์ Sheet 2 (เว้นว่างถ้าไม่มี)", required=False)
+
     def __init__(self, user_id):
         super().__init__()
         self.user_id = user_id
+        
+        # Pre-fill (ถ้าเคยกรอกแล้ว)
+        cache = queue_setup_cache.get(user_id, {}).get("sheets", {})
+        if 1 in cache:
+            self.label1.default = cache[1]["label"]
+            self.url1.default = cache[1]["url"]
+        if 2 in cache:
+            self.label2.default = cache[2]["label"]
+            self.url2.default = cache[2]["url"]
+
     async def on_submit(self, interaction: discord.Interaction):
-        queue_setup_cache[self.user_id]["sheet_url"] = self.url.value
-        await interaction.response.send_message("✅ บันทึกลิ้งค์แล้ว", ephemeral=True)
+        cache = queue_setup_cache[self.user_id]["sheets"]
+        # Save Sheet 1
+        cache[1] = {"label": self.label1.value, "url": self.url1.value}
+        # Save Sheet 2 (ถ้ามี)
+        if self.label2.value and self.url2.value:
+            cache[2] = {"label": self.label2.value, "url": self.url2.value}
+        elif 2 in cache:
+            del cache[2] # ลบออกถ้าเคลียร์ค่า
+            
+        await interaction.response.send_message("✅ บันทึกข้อมูล Sheet 1-2 แล้ว", ephemeral=True)
+
+# Modal กรอก Sheet 3-4
+class QueueSheetsModalPart2(discord.ui.Modal, title="ตั้งค่า Sheet 3 และ 4"):
+    label3 = discord.ui.TextInput(label="ชื่อปุ่มที่ 3 (เว้นว่างถ้าไม่มี)", required=False)
+    url3 = discord.ui.TextInput(label="ลิ้งค์ Sheet 3 (เว้นว่างถ้าไม่มี)", required=False)
+    
+    label4 = discord.ui.TextInput(label="ชื่อปุ่มที่ 4 (เว้นว่างถ้าไม่มี)", required=False)
+    url4 = discord.ui.TextInput(label="ลิ้งค์ Sheet 4 (เว้นว่างถ้าไม่มี)", required=False)
+
+    def __init__(self, user_id):
+        super().__init__()
+        self.user_id = user_id
+        
+        cache = queue_setup_cache.get(user_id, {}).get("sheets", {})
+        if 3 in cache:
+            self.label3.default = cache[3]["label"]
+            self.url3.default = cache[3]["url"]
+        if 4 in cache:
+            self.label4.default = cache[4]["label"]
+            self.url4.default = cache[4]["url"]
+
+    async def on_submit(self, interaction: discord.Interaction):
+        cache = queue_setup_cache[self.user_id]["sheets"]
+        # Save Sheet 3
+        if self.label3.value and self.url3.value:
+            cache[3] = {"label": self.label3.value, "url": self.url3.value}
+        elif 3 in cache: del cache[3]
+        # Save Sheet 4
+        if self.label4.value and self.url4.value:
+            cache[4] = {"label": self.label4.value, "url": self.url4.value}
+        elif 4 in cache: del cache[4]
+            
+        await interaction.response.send_message("✅ บันทึกข้อมูล Sheet 3-4 แล้ว", ephemeral=True)
 
 class QueueJsonModal(discord.ui.Modal, title="JSON Credentials Content"):
     json_str = discord.ui.TextInput(label="วางโค้ดจากไฟล์ .json ที่นี่", style=discord.TextStyle.paragraph, required=True)
@@ -210,19 +287,31 @@ class QueueJsonModal(discord.ui.Modal, title="JSON Credentials Content"):
             await interaction.response.send_message("⚠️ รูปแบบ JSON ไม่ถูกต้อง", ephemeral=True)
 
 # =========================================
-# MAIN VIEW: ปุ่มเช็คคิว
+# MAIN VIEW: ปุ่มเช็คคิว (Dynamic Buttons)
 # =========================================
-class QueueMainView(discord.ui.View):
-    # [UPDATED] รับค่า button_label มาใช้
-    def __init__(self, sheet_url, button_label="🔍 เช็คคิวงานของฉัน"):
-        super().__init__(timeout=None)
-        self.sheet_url = sheet_url
-        
-        # อัปเดตชื่อปุ่มตามที่ส่งมา
-        self.children[0].label = button_label
 
-    @discord.ui.button(label="🔍 เช็คคิวงานของฉัน", style=discord.ButtonStyle.primary, custom_id="check_my_queue")
-    async def check_queue(self, interaction: discord.Interaction, button: discord.ui.Button):
+# สร้าง Custom Button Class เพื่อเก็บ URL ของตัวเอง
+class QueueButton(discord.ui.Button):
+    def __init__(self, label, sheet_url, index):
+        # ใช้ custom_id ที่ไม่ซ้ำกันตาม index
+        super().__init__(label=label, style=discord.ButtonStyle.primary, custom_id=f"q_btn_{index}_{sheet_url[-5:]}")
+        self.sheet_url = sheet_url
+
+    async def callback(self, interaction: discord.Interaction):
+        await self.view.check_queue_logic(interaction, self.sheet_url)
+
+class QueueMainView(discord.ui.View):
+    def __init__(self, sheets_config):
+        super().__init__(timeout=None)
+        
+        # sheets_config คือ list ของ dict [{'label': 'xx', 'url': 'xx'}, ...]
+        for i, conf in enumerate(sheets_config):
+            # สร้างปุ่มและ Add เข้า View
+            btn = QueueButton(label=conf["label"], sheet_url=conf["url"], index=i)
+            self.add_item(btn)
+
+    # Logic การเช็คคิว (ใช้ร่วมกันทุกปุ่ม)
+    async def check_queue_logic(self, interaction: discord.Interaction, sheet_url):
         await interaction.response.defer(ephemeral=True)
         
         creds_file = "credentials.json"
@@ -234,14 +323,14 @@ class QueueMainView(discord.ui.View):
                      "https://www.googleapis.com/auth/drive.file", "https://www.googleapis.com/auth/drive"]
             creds = ServiceAccountCredentials.from_json_keyfile_name(creds_file, scope)
             client = gspread.authorize(creds)
-            sheet = client.open_by_url(self.sheet_url)
+            sheet = client.open_by_url(sheet_url)
             worksheet = sheet.get_worksheet(0)
             
             records = worksheet.get_all_records()
             if not records:
                 return await interaction.followup.send("❌ ไม่พบข้อมูลในตาราง", ephemeral=True)
 
-            possible_headers = ["ชื่อลูกค้า", "ID", "ลูกค้า", "ชื่อ", "Name", "Discord ID", "User", "Username"]
+            possible_headers = ["ชื่อลูกค้า", "ID", "ลูกค้า", "ชื่อ", "Discord", "Discord ID", "User", "Username"]
             target_key = None
             
             first_row_keys = records[0].keys()
@@ -251,7 +340,7 @@ class QueueMainView(discord.ui.View):
                     break
             
             if not target_key:
-                return await interaction.followup.send(f"⚠️ ใน Google Sheets ต้องมีหัวตารางอย่างน้อย 1 อย่างนี้: {', '.join(possible_headers)} เพื่อใช้ระบุตัวตนครับ", ephemeral=True)
+                return await interaction.followup.send(f"⚠️ ไม่พบหัวตารางระบุตัวตน (ต้องมี: {', '.join(possible_headers)})", ephemeral=True)
 
             user_id = str(interaction.user.id)
             user_name = interaction.user.name
@@ -266,7 +355,7 @@ class QueueMainView(discord.ui.View):
                     break
             
             if found_row:
-                embed = discord.Embed(title="📄 รายละเอียดคิวงานของคุณ", color=discord.Color.green())
+                embed = discord.Embed(title=f"📄 สถานะจาก: {sheet.title}", color=discord.Color.green())
                 embed.set_author(name=f"สวัสดีคุณ {user_display}", icon_url=interaction.user.display_avatar.url)
                 
                 for k, v in found_row.items():
@@ -276,7 +365,7 @@ class QueueMainView(discord.ui.View):
                 embed.set_footer(text=f"อัปเดตล่าสุด: {discord.utils.utcnow().strftime('%H:%M')}")
                 await interaction.followup.send(embed=embed, ephemeral=True)
             else:
-                await interaction.followup.send("❌ ไม่พบข้อมูลของคุณ กรุณาติดต่อแอดมิน", ephemeral=True)
+                await interaction.followup.send("❌ ไม่พบข้อมูลของคุณในรายการนี้", ephemeral=True)
 
         except Exception as e:
             await interaction.followup.send(f"❌ เกิดข้อผิดพลาด: {e}", ephemeral=True)
