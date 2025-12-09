@@ -100,9 +100,9 @@ class ReportModal(discord.ui.Modal, title=MESSAGES["tf_modal_report_title"]):
         if conf and conf["log_id"]:
             log = interaction.guild.get_channel(conf["log_id"])
             embed = discord.Embed(title=MESSAGES["tf_log_report_title"], color=discord.Color.orange())
-            embed.add_field(name="╭ 🗃️ ฟอรั่ม", value=interaction.channel.mention, inline=False)
-            embed.add_field(name="| 🚩 รายงานโดย", value=interaction.user.mention, inline=True)
-            embed.add_field(name="╰ 📝 เหตุผล", value=self.reason.value, inline=False)
+            embed.add_field(name="🗃️ ฟอรั่ม", value=interaction.channel.mention, inline=False)
+            embed.add_field(name="🚩 รายงานโดย", value=interaction.user.mention, inline=True)
+            embed.add_field(name="📝 เหตุผล", value=self.reason.value, inline=False)
             embed.timestamp = datetime.datetime.now()
             await log.send(embed=embed)
         
@@ -152,10 +152,10 @@ class TicketCancelModal(discord.ui.Modal, title=MESSAGES["tf_modal_cancel_title"
             if log_chan:
                 data = load_data()
                 embed = discord.Embed(title=MESSAGES["tf_log_cancel_title"], description=MESSAGES["tf_log_cancel_desc"].format(count=self.count), color=discord.Color.red())
-                embed.add_field(name="╭ 🪧 ผู้ขาย", value=f"<@{self.seller_id}>", inline=True)
-                embed.add_field(name="| 👤 ผู้ซื้อ", value=f"<@{self.buyer_id}>", inline=True)
-                embed.add_field(name="| 🚫 ยกเลิกโดย", value=interaction.user.mention, inline=True)
-                embed.add_field(name="╰ 📝 เหตุผล", value=self.reason.value, inline=False)
+                embed.add_field(name="🪧 ผู้ขาย", value=f"<@{self.seller_id}>", inline=True)
+                embed.add_field(name="👤 ผู้ซื้อ", value=f"<@{self.buyer_id}>", inline=True)
+                embed.add_field(name="🚫 ยกเลิกโดย", value=interaction.user.mention, inline=True)
+                embed.add_field(name="📝 เหตุผล", value=self.reason.value, inline=False)
                 embed.timestamp = datetime.datetime.now()
                 await log_chan.send(embed=embed)
         
@@ -198,9 +198,9 @@ class AdminCloseView(discord.ui.View):
             if log_chan:
                 data = load_data()
                 embed = discord.Embed(title=MESSAGES["tf_log_success_title"], description=MESSAGES["tf_log_success_desc"].format(count=self.count), color=discord.Color.green())
-                embed.add_field(name="╭ 🪧 ผู้ขาย", value=f"<@{self.seller_id}>", inline=True)
-                embed.add_field(name="| 👤 ผู้ซื้อ", value=f"<@{self.buyer_id}>", inline=True)
-                embed.add_field(name="╰ 🔒 ปิดช่องโดย", value=interaction.user.mention, inline=False)
+                embed.add_field(name="🪧 ผู้ขาย", value=f"<@{self.seller_id}>", inline=True)
+                embed.add_field(name="👤 ผู้ซื้อ", value=f"<@{self.buyer_id}>", inline=True)
+                embed.add_field(name="🔒 ปิดช่องโดย", value=interaction.user.mention, inline=False)
                 embed.timestamp = datetime.datetime.now()
                 await log_chan.send(embed=embed)
         
