@@ -279,6 +279,7 @@ class ConfigPriceButton(discord.ui.Button):
         
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id: return
+        # ส่ง self.view ไปให้ Modal
         await interaction.response.send_modal(PriceConfigModal(self.user_id, self.index, self.view))
 
 class PriceConfigModal(discord.ui.Modal, title="ตั้งค่าการเร่งงาน"):
@@ -329,17 +330,21 @@ class TicketLauncherView(discord.ui.View):
         super().__init__(timeout=None)
         self.msg_id = msg_id
         
+        # ถ้าไม่มี config (ตอน Restore) ให้โหลดจาก DB
         if not buttons_config and msg_id:
             data = load_data()
             if "ticket_v2_configs" in data and msg_id in data["ticket_v2_configs"]:
                 buttons_config = data["ticket_v2_configs"][msg_id]["buttons"]
         
         if buttons_config:
+            # แปลง keys เป็น int เพื่อเรียงลำดับ
             sorted_keys = sorted([int(k) for k in buttons_config.keys()])
             for idx in sorted_keys:
                 conf = buttons_config[str(idx)] if str(idx) in buttons_config else buttons_config[idx]
+                
                 btn_style = discord.ButtonStyle.success if conf["status"] else discord.ButtonStyle.secondary
                 label = conf["label"] 
+                
                 self.add_item(TicketButton(self.msg_id, idx, label, btn_style))
 
 class TicketButton(discord.ui.Button):
@@ -356,9 +361,11 @@ class TicketButton(discord.ui.Button):
         config = data["ticket_v2_configs"][str(self.msg_id)]
         btn_conf = config["buttons"][str(self.type_idx)]
         
+        # 1. เช็คสถานะ
         if not btn_conf["status"]:
             return await interaction.response.send_message("🔴 ตั๋วนี้ถูกปิดใช้งานอยู่ครับ", ephemeral=True)
         
+        # 2. สร้างห้อง
         await interaction.response.defer(ephemeral=True)
         category = interaction.guild.get_channel(btn_conf["category_id"])
         
@@ -375,6 +382,7 @@ class TicketButton(discord.ui.Button):
         ticket_name = f"ticket-{interaction.user.name}"
         channel = await interaction.guild.create_text_channel(ticket_name, category=category, overwrites=overwrites)
         
+        # 3. ส่งข้อความในห้อง
         embed = discord.Embed(description=btn_conf["message"], color=discord.Color.blue())
         if btn_conf["image"]: embed.set_image(url=btn_conf["image"])
         
@@ -383,6 +391,7 @@ class TicketButton(discord.ui.Button):
         
         await interaction.followup.send(f"✅ สร้างห้องแล้ว: {channel.mention}", ephemeral=True)
         
+        # 4. บันทึก Active Ticket
         if "active_tickets_v2" not in data: data["active_tickets_v2"] = {}
         data["active_tickets_v2"][str(channel.id)] = {
             "main_msg_id": self.msg_id,
@@ -423,20 +432,24 @@ class ConsoleToggleButton(discord.ui.Button):
         data = load_data()
         config = data["ticket_v2_configs"][str(self.msg_id)]
         
+        # Toggle Status
         current_status = config["buttons"][str(self.type_idx)]["status"]
         new_status = not current_status
         config["buttons"][str(self.type_idx)]["status"] = new_status
         save_data(data)
         
-        self.view = TicketConsoleView(self.msg_id, config["buttons"])
-        await interaction.response.edit_message(view=self.view)
+        # [FIXED] ใช้ตัวแปรใหม่ (new_view) แทนการทับ self.view
+        new_console_view = TicketConsoleView(self.msg_id, config["buttons"])
+        await interaction.response.edit_message(view=new_console_view)
         
+        # Update Main View (Embed & Buttons)
         try:
             main_channel_id = config["channel_id"]
             channel = interaction.guild.get_channel(main_channel_id)
             if not channel: channel = await interaction.guild.fetch_channel(main_channel_id)
             msg = await channel.fetch_message(int(self.msg_id))
             
+            # Update Embed Description
             status_text = ""
             for idx, conf in config["buttons"].items():
                 s = "เปิดให้บริการ 🟢" if conf["status"] else "ปิดให้บริการ 🔴"
