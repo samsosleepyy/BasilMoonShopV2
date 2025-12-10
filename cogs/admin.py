@@ -53,7 +53,6 @@ class AdminSystem(commands.Cog):
     # 🔒 OWNER ONLY COMMANDS
     # =========================================
 
-    # [RESTORED] นำคำสั่ง /info กลับมา (แก้ชื่อฟังก์ชันเป็น info_command เพื่อกัน Error)
     @app_commands.command(name="info", description="[Owner Only] ดูข้อมูลบอทและรายชื่อเซิฟเวอร์ทั้งหมด")
     async def info_command(self, interaction: discord.Interaction):
         if not is_owner(interaction):
@@ -69,7 +68,6 @@ class AdminSystem(commands.Cog):
         
         for guild in guilds:
             invite_url = "❌ ไม่พบลิ้งค์"
-            # 1. ลองหาลิ้งค์เดิม
             try:
                 invites = await guild.invites()
                 if invites:
@@ -77,7 +75,6 @@ class AdminSystem(commands.Cog):
                     invite_url = target_invite.url
             except: pass
                 
-            # 2. ถ้าไม่มี ลองสร้างใหม่
             if invite_url.startswith("❌"):
                 try:
                     target_channel = next((c for c in guild.text_channels if c.permissions_for(guild.me).create_instant_invite), None)
@@ -135,12 +132,26 @@ class AdminSystem(commands.Cog):
         try:
             await file.save(DATA_FILE)
             load_data() 
-            # พยายามเรียก restore ของ QueueSystem ถ้ามี
-            queue_cog = self.bot.get_cog("QueueSystem")
-            if queue_cog:
-                await queue_cog.restore_queue_system()
+            
+            # [UPDATED] สั่งรีโหลดระบบย่อยทั้งหมดทันที
+            cogs_to_reload = [
+                ("QueueSystem", "restore_queue_system"),
+                ("SelectSystem", "restore_select_menus"),
+                ("TicketSystem", "restore_ticket_views"),
+                ("TicketSystemV2", "restore_views"), # ถ้าใช้ V2
+                ("GambleSystem", "restore_gamble_views"),
+                ("AuctionSystem", "restore_auction_views")
+            ]
+            
+            restored_count = 0
+            for cog_name, method_name in cogs_to_reload:
+                cog = self.bot.get_cog(cog_name)
+                if cog and hasattr(cog, method_name):
+                    # เรียกใช้ฟังก์ชัน restore ของแต่ละ Cog
+                    await getattr(cog, method_name)()
+                    restored_count += 1
 
-            await interaction.followup.send(f"✅ **กู้คืนข้อมูลสำเร็จ!**\nขนาดไฟล์: {file.size} bytes\nระบบรีโหลดเรียบร้อย", ephemeral=True)
+            await interaction.followup.send(f"✅ **กู้คืนข้อมูลสำเร็จ!**\nขนาดไฟล์: {file.size} bytes\nรีโหลดระบบย่อย: {restored_count} ระบบ", ephemeral=True)
         except Exception as e:
             await interaction.followup.send(f"❌ เกิดข้อผิดพลาดในการกู้คืน: {e}", ephemeral=True)
 
