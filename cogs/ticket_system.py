@@ -29,16 +29,18 @@ class TicketSystemV2(commands.Cog):
         if "ticket_v2_configs" in data:
             for msg_id, config in data["ticket_v2_configs"].items():
                 try:
+                    # Restore Launcher (ส่ง config ทั้งก้อนไป)
                     view = TicketLauncherView(msg_id, config)
                     self.bot.add_view(view, message_id=int(msg_id))
                     
+                    # Restore Console
                     if "console_msg_id" in config:
                         console_view = TicketConsoleView(msg_id)
                         self.bot.add_view(console_view, message_id=int(config["console_msg_id"]))
                 except Exception as e:
                     print(f"Error restoring ticket v2 config {msg_id}: {e}")
 
-        # 2. กู้คืน Active Tickets
+        # 2. กู้คืน Active Tickets (ปุ่มในห้อง)
         if "active_tickets_v2" in data:
             for chan_id, info in data["active_tickets_v2"].items():
                 try:
@@ -59,7 +61,7 @@ class TicketSystemV2(commands.Cog):
             "log_channel": log_channel.id if log_channel else None,
             "embed_data": {"title": "Ticket Support", "desc": "กดปุ่มด้านล่างเพื่อเปิดตั๋ว", "image": None},
             "buttons": {},
-            "launcher_style": "buttons"
+            "launcher_style": "buttons" # ค่าเริ่มต้น
         }
         
         view = SetupStep1View(interaction.user.id)
@@ -79,7 +81,7 @@ class TicketSystemV2(commands.Cog):
                 att = message.attachments[0]
                 if att.content_type and att.content_type.startswith("image/"):
                     view = RushConfirmView(chan_id)
-                    await message.reply("🧾 **ได้รับสลิปแล้ว**\nรอแอดมินตรวจสอบ", view=view)
+                    await message.reply("🧾 **ได้รับสลิปแล้ว**\nแอดมินตรวจสอบและกดปุ่มด้านล่างเพื่อยืนยันการเร่งงาน", view=view)
 
 async def setup(bot):
     await bot.add_cog(TicketSystemV2(bot))
@@ -202,27 +204,32 @@ class SetupStep2View(discord.ui.View):
         embed = discord.Embed(title=embed_data["title"], description=embed_data["desc"], color=discord.Color.green())
         if embed_data["image"]: embed.set_image(url=embed_data["image"])
         
+        # สร้าง View แบบ Dummy ไปก่อนเพื่อเอา ID
         dummy_view = TicketLauncherView(None) 
         msg = await main_channel.send(embed=embed, view=dummy_view) 
         
+        # สร้าง config จริง
         final_config = {
             "channel_id": cache["target_channel"],
             "console_channel_id": cache["console_channel"],
-            "console_msg_id": None,
+            "console_msg_id": None, # รออัปเดต
             "log_channel_id": cache["log_channel"],
             "embed_data": cache["embed_data"],
             "buttons": cache["buttons"],
             "launcher_style": cache.get("launcher_style", "buttons")
         }
         
+        # Update View ของจริงตาม Style ที่เลือก
         new_view = TicketLauncherView(str(msg.id), final_config)
         await msg.edit(view=new_view)
         
+        # ส่ง Console
         console_channel = interaction.guild.get_channel(cache["console_channel"])
         con_embed = discord.Embed(title="🎛️ Ticket Console", description="ควบคุมสถานะการเปิด/ปิดตั๋ว", color=discord.Color.dark_grey())
         con_view = TicketConsoleView(str(msg.id), cache["buttons"])
         con_msg = await console_channel.send(embed=con_embed, view=con_view)
         
+        # Save Data
         final_config["console_msg_id"] = str(con_msg.id)
         data = load_data()
         if "ticket_v2_configs" not in data: data["ticket_v2_configs"] = {}
@@ -310,7 +317,9 @@ class TicketLauncherView(discord.ui.View):
             else:
                 sorted_keys = sorted([int(k) for k in buttons_config.keys()])
                 for idx in sorted_keys:
-                    conf = buttons_config[str(idx)]
+                    # [FIXED] รองรับทั้ง Key int และ str
+                    conf = buttons_config[str(idx)] if str(idx) in buttons_config else buttons_config[idx]
+                    
                     is_disabled = not conf["status"]
                     btn_style = discord.ButtonStyle.success if conf["status"] else discord.ButtonStyle.secondary
                     self.add_item(TicketButton(self.msg_id, idx, conf["label"], btn_style, is_disabled))
@@ -329,7 +338,9 @@ class TicketLauncherSelect(discord.ui.Select):
         options = []
         sorted_keys = sorted([int(k) for k in buttons_config.keys()])
         for idx in sorted_keys:
-            conf = buttons_config[str(idx)]
+            # [FIXED] รองรับทั้ง Key int และ str เพื่อแก้ KeyError '0'
+            conf = buttons_config[str(idx)] if str(idx) in buttons_config else buttons_config[idx]
+            
             status_text = "สถานะ : เปิดให้บริการ 🟢" if conf["status"] else "สถานะ : ปิดให้บริการ 🔴"
             options.append(discord.SelectOption(
                 label=conf["label"],
@@ -350,7 +361,10 @@ async def handle_ticket_creation(interaction, msg_id, type_idx):
         return await interaction.response.send_message("❌ ไม่พบข้อมูล Config", ephemeral=True)
     
     config = data["ticket_v2_configs"][str(msg_id)]
-    btn_conf = config["buttons"][str(type_idx)]
+    
+    # [FIXED] รองรับ Key
+    buttons_config = config["buttons"]
+    btn_conf = buttons_config[str(type_idx)] if str(type_idx) in buttons_config else buttons_config[type_idx]
     
     if not btn_conf["status"]:
         return await interaction.response.send_message("🔴 ตั๋วนี้ถูกปิดใช้งานอยู่ครับ", ephemeral=True)
@@ -382,7 +396,7 @@ async def handle_ticket_creation(interaction, msg_id, type_idx):
         "main_msg_id": msg_id,
         "type_idx": type_idx,
         "user_id": interaction.user.id,
-        "guild_id": interaction.guild_id, # [UPDATED] เพิ่ม guild_id เพื่อใช้เช็ค reset
+        "guild_id": interaction.guild_id, 
         "is_rushing": False
     }
     save_data(data)
@@ -413,9 +427,14 @@ class ConsoleToggleButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction):
         data = load_data()
         config = data["ticket_v2_configs"][str(self.msg_id)]
-        current_status = config["buttons"][str(self.type_idx)]["status"]
+        
+        # [FIXED] รองรับ Key
+        buttons_config = config["buttons"]
+        key = str(self.type_idx) if str(self.type_idx) in buttons_config else self.type_idx
+        
+        current_status = buttons_config[key]["status"]
         new_status = not current_status
-        config["buttons"][str(self.type_idx)]["status"] = new_status
+        buttons_config[key]["status"] = new_status
         save_data(data)
         
         new_con_view = TicketConsoleView(self.msg_id, config["buttons"])
@@ -427,7 +446,6 @@ class ConsoleToggleButton(discord.ui.Button):
             if not channel: channel = await interaction.guild.fetch_channel(main_channel_id)
             msg = await channel.fetch_message(int(self.msg_id))
             
-            # Update Embed Description (ถ้าต้องการ)
             status_text = ""
             for idx, conf in config["buttons"].items():
                 s = "เปิดให้บริการ 🟢" if conf["status"] else "ปิดให้บริการ 🔴"
@@ -452,7 +470,7 @@ class TicketInsideView(discord.ui.View):
         self.main_msg_id = main_msg_id
         self.type_idx = type_idx
 
-    @discord.ui.button(label="🗑️ ปิดตั๋ว (Admin)", style=discord.ButtonStyle.red, custom_id="tkv2_close")
+    @discord.ui.button(label="ปิดตั๋ว (Admin)", style=discord.ButtonStyle.red, custom_id="tkv2_close")
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not is_admin_or_has_permission(interaction): 
              return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
@@ -462,7 +480,6 @@ class TicketInsideView(discord.ui.View):
         if str(interaction.channel.id) in data["active_tickets_v2"]:
             del data["active_tickets_v2"][str(interaction.channel.id)]
         
-        # [UPDATED] ลอจิกรีเซ็ตลำดับเร่ง
         target_guild_id = interaction.guild_id
         remaining_rush = False
         for cid, info in data["active_tickets_v2"].items():
@@ -480,9 +497,14 @@ class TicketInsideView(discord.ui.View):
     @discord.ui.button(label="เร่งงาน 🔥", style=discord.ButtonStyle.primary, custom_id="tkv2_rush")
     async def rush_work(self, interaction: discord.Interaction, button: discord.ui.Button):
         data = load_data()
-        config = data["ticket_v2_configs"][str(self.main_msg_id)]["buttons"][str(self.type_idx)]
-        price = config["rush_price"]
-        img_url = config["pay_img"]
+        config = data["ticket_v2_configs"][str(self.main_msg_id)]["buttons"]
+        
+        # [FIXED] รองรับ Key
+        key = str(self.type_idx) if str(self.type_idx) in config else self.type_idx
+        btn_conf = config[key]
+        
+        price = btn_conf["rush_price"]
+        img_url = btn_conf["pay_img"]
         embed = discord.Embed(title="🔥 บริการเร่งงาน", description=f"ค่าบริการ: **{price} บาท**\nโปรดโอนเงินและส่งสลิปในห้องนี้", color=discord.Color.orange())
         embed.set_image(url=img_url)
         view = RushPaymentView()
@@ -509,7 +531,7 @@ class RushConfirmView(discord.ui.View):
     def __init__(self, chan_id):
         super().__init__(timeout=None)
         self.chan_id = chan_id
-    @discord.ui.button(label="ยืนยันการโอน ✅ (Admin only)", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="ยืนยันการโอน ✅ (Admin Only)", style=discord.ButtonStyle.success)
     async def confirm_slip(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not is_admin_or_has_permission(interaction): 
              return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
@@ -517,7 +539,12 @@ class RushConfirmView(discord.ui.View):
         data = load_data()
         ticket_info = data["active_tickets_v2"].get(str(interaction.channel.id))
         if not ticket_info: return
-        main_config = data["ticket_v2_configs"][str(ticket_info["main_msg_id"])]["buttons"][str(ticket_info["type_idx"])]
+        
+        # [FIXED] รองรับ Key
+        config = data["ticket_v2_configs"][str(ticket_info["main_msg_id"])]["buttons"]
+        key = str(ticket_info["type_idx"]) if str(ticket_info["type_idx"]) in config else ticket_info["type_idx"]
+        main_config = config[key]
+        
         owner_id = main_config["owner_id"]
         try:
             rush_msg_id = ticket_info.get("rush_msg_id")
@@ -534,5 +561,5 @@ class RushConfirmView(discord.ui.View):
         save_data(data)
         new_name = f"{interaction.channel.name}-เร่ง-{count}"
         await interaction.channel.edit(name=new_name)
-        msg = f"<@{owner_id}> 🚨 **{interaction.channel.mention} มีคนเร่งงาน!** มาทำเร็ววววววว (ลำดับที่ {count})"
+        msg = f"<@{owner_id}> 🚨 **{interaction.channel.mention} เร่งงาน!** มาทำเร็วววววว (ลำดับที่ {count})"
         await interaction.channel.send(msg)
