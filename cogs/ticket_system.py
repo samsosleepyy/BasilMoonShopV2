@@ -223,6 +223,7 @@ class SetupStep2View(discord.ui.View):
         msg = await main_channel.send(embed=embed, view=main_view) # ส่งไปก่อนเพื่อเอา ID
         main_view.msg_id = str(msg.id)
         
+        # Re-build View with proper custom_ids linked to msg_id
         new_view = TicketLauncherView(str(msg.id), cache["buttons"])
         await msg.edit(view=new_view)
         
@@ -260,7 +261,7 @@ class ConfigPriceButton(discord.ui.Button):
         
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id: return
-        # [FIXED] ส่ง self.view ไปให้ Modal ด้วย เพื่อให้ Modal อ้างอิงกลับมาแก้ปุ่มได้
+        # [FIXED] ส่ง self.view ไปให้ Modal
         await interaction.response.send_modal(PriceConfigModal(self.user_id, self.index, self.view))
 
 class PriceConfigModal(discord.ui.Modal, title="ตั้งค่าการเร่งงาน"):
@@ -273,7 +274,7 @@ class PriceConfigModal(discord.ui.Modal, title="ตั้งค่าการ�
         super().__init__()
         self.user_id = user_id
         self.index = index
-        self.parent_view = parent_view
+        self.parent_view = parent_view # เก็บ View ไว้ที่นี่
 
     async def on_submit(self, interaction: discord.Interaction):
         try:
@@ -289,7 +290,7 @@ class PriceConfigModal(discord.ui.Modal, title="ตั้งค่าการ�
             "owner_id": int(self.owner_id.value)
         })
         
-        # [FIXED] ใช้ self.parent_view แทน self.view
+        # [FIXED] ใช้ self.parent_view แทน self.view (ซึ่งไม่มี)
         for child in self.parent_view.children:
             if isinstance(child, ConfigPriceButton) and child.index == self.index:
                 child.style = discord.ButtonStyle.success
@@ -525,5 +526,5 @@ class RushConfirmView(discord.ui.View):
         new_name = f"{interaction.channel.name}-เร่ง-{count}"
         await interaction.channel.edit(name=new_name)
         
-        msg = f"<@{owner_id}> 🚨 **{interaction.channel.mention} เร่งงาน!** มาทำเร็ววววววว (ลำดับที่ {count})"
+        msg = f"<@{owner_id}> 🚨 **{interaction.channel.mention} เร่งงาน!** มาทำเร็วๆ (ลำดับที่ {count})"
         await interaction.channel.send(msg)
