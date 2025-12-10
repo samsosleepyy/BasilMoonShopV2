@@ -220,10 +220,9 @@ class SetupStep2View(discord.ui.View):
         
         # สร้าง View ของ Main
         main_view = TicketLauncherView(None) 
-        msg = await main_channel.send(embed=embed, view=main_view) # ส่งไปก่อนเพื่อเอา ID
-        main_view.msg_id = str(msg.id)
+        msg = await main_channel.send(embed=embed, view=main_view) 
         
-        # Re-build View with proper custom_ids linked to msg_id
+        # Re-build View with proper ID
         new_view = TicketLauncherView(str(msg.id), cache["buttons"])
         await msg.edit(view=new_view)
         
@@ -261,7 +260,7 @@ class ConfigPriceButton(discord.ui.Button):
         
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id: return
-        # [FIXED] ส่ง self.view ไปให้ Modal
+        # ส่ง self.view (คือ SetupStep2View) เข้าไปให้ Modal
         await interaction.response.send_modal(PriceConfigModal(self.user_id, self.index, self.view))
 
 class PriceConfigModal(discord.ui.Modal, title="ตั้งค่าการเร่งงาน"):
@@ -269,12 +268,12 @@ class PriceConfigModal(discord.ui.Modal, title="ตั้งค่าการ�
     pay_img = discord.ui.TextInput(label="ลิ้งค์รูปชำระเงิน (QR)", required=True)
     owner_id = discord.ui.TextInput(label="ไอดีเจ้าของตั๋ว (User ID)", required=True)
 
-    # [FIXED] รับ parent_view มาเก็บไว้
+    # รับ parent_view มาเก็บไว้
     def __init__(self, user_id, index, parent_view):
         super().__init__()
         self.user_id = user_id
         self.index = index
-        self.parent_view = parent_view # เก็บ View ไว้ที่นี่
+        self.parent_view = parent_view
 
     async def on_submit(self, interaction: discord.Interaction):
         try:
@@ -290,7 +289,7 @@ class PriceConfigModal(discord.ui.Modal, title="ตั้งค่าการ�
             "owner_id": int(self.owner_id.value)
         })
         
-        # [FIXED] ใช้ self.parent_view แทน self.view (ซึ่งไม่มี)
+        # [FIXED] ใช้ self.parent_view แทน self.view
         for child in self.parent_view.children:
             if isinstance(child, ConfigPriceButton) and child.index == self.index:
                 child.style = discord.ButtonStyle.success
