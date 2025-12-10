@@ -14,10 +14,11 @@ class SelectSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
     
-    # [FIXED] ใช้ create_task
+    # [NEW] Auto-Load: กู้คืนเมนูทั้งหมดเมื่อบอทเริ่มทำงาน
     async def cog_load(self):
         self.bot.loop.create_task(self.restore_select_menus())
 
+    # ฟังก์ชันกู้คืนเมนู (เรียกใช้ได้ทั้งตอนเริ่มบอท และตอน Restore)
     async def restore_select_menus(self):
         await self.bot.wait_until_ready()
         print("🔄 Restoring Select Menus...")
@@ -26,7 +27,9 @@ class SelectSystem(commands.Cog):
         if "select_menus" in data:
             for msg_id, options in data["select_menus"].items():
                 try:
+                    # สร้าง View เดิมกลับมา
                     view = SelectMenuMainView(options)
+                    # สั่งให้บอทจำ View นี้ไว้ที่ข้อความเดิม
                     self.bot.add_view(view, message_id=int(msg_id))
                     count += 1
                 except Exception as e:
@@ -96,7 +99,6 @@ class SelectSystem(commands.Cog):
 async def setup(bot):
     await bot.add_cog(SelectSystem(bot))
 
-# ... (ส่วน View ของ Select Menu คงเดิม ใช้โค้ดเก่าได้เลย) ...
 # =========================================
 # MODALS
 # =========================================
@@ -244,8 +246,8 @@ class SelectMenuMainView(discord.ui.View):
 
     async def select_callback(self, interaction: discord.Interaction):
         selected_idx = int(interaction.data["values"][0])
-        
         selected_data = next((item for item in self.options_data if item["index"] == selected_idx), None)
+        
         if not selected_data:
             return await interaction.response.send_message("❌ ข้อมูลผิดพลาด (ลองใช้ /edit-sm เพื่อรีเฟรชเมนูนี้ดูครับ)", ephemeral=True)
             
