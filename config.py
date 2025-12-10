@@ -304,7 +304,7 @@ def init_guild_data(data, guild_id):
         data["guilds"][str_id] = {
             "auction_count": 0, "ticket_count": 0, "ticket_configs": {},
             "lockdown_time": 0, "claimed_prizes": {}, "gamble_configs": {},
-            "gamble_stats": {}, "antiraid": {"status": False, "log_channel": None},
+            "rush_queue": 0, "gamble_stats": {}, "antiraid": {"status": False, "log_channel": None},
             "autobackup_channel": None
         }
     return data
