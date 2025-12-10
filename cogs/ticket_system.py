@@ -17,11 +17,13 @@ class TicketSystemV2(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+    # [FIXED] แก้ไขจุดที่ทำให้บอทค้าง (ย้ายการรอไปไว้ใน restore_views)
     async def cog_load(self):
-        await self.bot.wait_until_ready()
         self.bot.loop.create_task(self.restore_views())
 
     async def restore_views(self):
+        # รอให้บอทพร้อมใน Background Task แทน
+        await self.bot.wait_until_ready()
         print("🔄 Restoring Ticket V2 Views...")
         data = load_data()
         
@@ -218,42 +220,14 @@ class SetupStep2View(discord.ui.View):
         embed = discord.Embed(title=embed_data["title"], description=embed_data["desc"], color=discord.Color.green())
         if embed_data["image"]: embed.set_image(url=embed_data["image"])
         
-        # สร้าง View ของ Main
-        main_view = TicketLauncherView(None) # ID จะมาทีหลัง
-        # Add buttons based on config
-        for idx in sorted(cache["buttons"].keys()):
-            conf = cache["buttons"][idx]
-            desc_status = "สถานะ : เปิดให้บริการ 🟢" if conf["status"] else "สถานะ : ปิดให้บริการ 🔴"
-            btn = discord.ui.Button(
-                label=conf["label"], 
-                style=discord.ButtonStyle.primary, 
-                custom_id=f"tkv2_open_{idx}"
-                # Description ในปุ่ม Discord ยังทำไม่ได้ใน standard button ต้องใช้ Select Menu หรือ Embed แทน
-                # แต่โจทย์บอก "description ของปุ่ม" อาจหมายถึงใน Select Menu? 
-                # หรือถ้าเป็นปุ่มกดปกติ จะไม่มี description -> แต่โจทย์บอก console แก้ description ของปุ่ม
-                # *สมมติว่า* หมายถึงแก้ Label หรือ Embed? 
-                # **แก้ไข:** เพื่อให้ตรงโจทย์ "สถานะ : เปิดให้บริการ" จะไปอยู่ใน Select Menu ไม่ได้เพราะโจทย์บอกเป็นปุ่ม
-                # ดังนั้นผมจะใส่สถานะไว้ใน **Label** หรือ **Embed** แทน
-                # แต่โจทย์บอก "ใน console ก็จะมีปุ่ม ปิดตั๋ว A คำอธิบายก็จะเป็น สถานะ : ปิดให้บริการ"
-                # ดังนั้นผมจะทำเป็น Select Menu ใน Main View ไหม? "ปุ่ม 20 ปุ่มซึ่งจะเหมือนคำสั่ง select menu เลย"
-                # Oke, I will create Buttons. Status will be shown in Button Label or Embed updates.
-            )
-            # แต่ Button ปกติไม่มี Description -> Discord API limit.
-            # ผมจะใส่สถานะใน Embed หลักแทน หรือ อัปเดต Label ปุ่ม
-            # เพื่อให้ตรงโจทย์ที่สุด -> ผมจะให้ Console อัปเดต "Embed หลัก" เพื่อบอกสถานะของแต่ละปุ่ม
-            # หรือถ้าโจทย์หมายถึง Select Menu -> ผมจะทำเป็น Select Menu ดีกว่าไหม? 
-            # "คำสั่ง select menu เลย" -> อาจหมายถึงหน้าตาตอน Setup
-            
-            # **ตัดสินใจ:** ใช้ปุ่มกดปกติ และแสดงสถานะผ่าน Embed หลักครับ
+        # สร้าง View ของ Main (ส่งไปก่อนเพื่อเอา ID)
+        main_view = TicketLauncherView(None) 
+        msg = await main_channel.send(embed=embed, view=main_view) 
         
-        # สร้าง Main Config เพื่อบันทึก
-        msg = await main_channel.send(embed=embed, view=main_view) # ส่งไปก่อนเพื่อเอา ID
-        main_view.msg_id = str(msg.id)
-        
-        # Re-build View with proper custom_ids linked to msg_id (if needed) or just generic
-        # ผมจะใช้ generic custom_id: tkv2_{msg_id}_{idx}
-        
-        new_view = TicketLauncherView(str(msg.id), cache["buttons"])
+        # Re-build View with proper ID
+        # อัปเดตข้อมูล Config ลงใน View ใหม่
+        new_config = cache["buttons"]
+        new_view = TicketLauncherView(str(msg.id), new_config)
         await msg.edit(view=new_view)
         
         # 2. ส่ง Console ไปช่อง Console
@@ -344,10 +318,7 @@ class TicketLauncherView(discord.ui.View):
             for idx in sorted_keys:
                 conf = buttons_config[str(idx)] if str(idx) in buttons_config else buttons_config[idx]
                 
-                # Logic: ถ้าปิดอยู่ ปุ่มจะ Disabled หรือเปลี่ยน Label
-                # โจทย์: "หากมีผู้ใช้กดบอทจะบอกว่าตั๋วนี้ถูกปิดใช้งานอยู่" -> แปลว่าปุ่มต้องกดได้แต่แจ้งเตือน
                 btn_style = discord.ButtonStyle.success if conf["status"] else discord.ButtonStyle.secondary
-                # Label
                 label = conf["label"] 
                 
                 self.add_item(TicketButton(self.msg_id, idx, label, btn_style))
@@ -368,20 +339,18 @@ class TicketButton(discord.ui.Button):
         
         # 1. เช็คสถานะ
         if not btn_conf["status"]:
-            return await interaction.response.send_message("🔴 ตั๋วนี้ถูกปิดใช้งานอยู่", ephemeral=True)
+            return await interaction.response.send_message("🔴 ตั๋วนี้ถูกปิดใช้งานอยู่ครับ", ephemeral=True)
         
         # 2. สร้างห้อง
         await interaction.response.defer(ephemeral=True)
         category = interaction.guild.get_channel(btn_conf["category_id"])
         
-        # Permission Overwrites
         overwrites = {
             interaction.guild.default_role: discord.PermissionOverwrite(read_messages=False),
             interaction.user: discord.PermissionOverwrite(read_messages=True),
             interaction.guild.me: discord.PermissionOverwrite(read_messages=True)
         }
         
-        # เพิ่มสิทธิ์ให้เจ้าของตั๋ว (Admin/Owner)
         owner_member = interaction.guild.get_member(btn_conf["owner_id"])
         if owner_member:
             overwrites[owner_member] = discord.PermissionOverwrite(read_messages=True)
@@ -456,8 +425,7 @@ class ConsoleToggleButton(discord.ui.Button):
             if not channel: channel = await interaction.guild.fetch_channel(main_channel_id)
             msg = await channel.fetch_message(int(self.msg_id))
             
-            # Update Embed Description (Optionally, but prompt says update description of button)
-            # We update Embed description to list statuses
+            # Update Embed Description
             status_text = ""
             for idx, conf in config["buttons"].items():
                 s = "เปิดให้บริการ 🟢" if conf["status"] else "ปิดให้บริการ 🔴"
@@ -483,17 +451,13 @@ class TicketInsideView(discord.ui.View):
         self.main_msg_id = main_msg_id
         self.type_idx = type_idx
 
-    @discord.ui.button(label="ปิดตั๋ว", style=discord.ButtonStyle.red, custom_id="tkv2_close")
+    @discord.ui.button(label="ปิดตั๋ว (Admin)", style=discord.ButtonStyle.red, custom_id="tkv2_close")
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # เช็คสิทธิ์ Admin/Support/Owner
-        if not is_admin_or_has_permission(interaction): # Function from config
-             # ต้องเช็คว่าเป็น owner ใน config ของ ticket นี้ไหม?
-             # โจทย์บอก "กดได้เฉพาะแอดมินเท่านั้น"
+        if not is_admin_or_has_permission(interaction): 
              return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
         
         await interaction.channel.delete()
         
-        # ลบ Data
         data = load_data()
         if str(interaction.channel.id) in data["active_tickets_v2"]:
             del data["active_tickets_v2"][str(interaction.channel.id)]
@@ -513,7 +477,6 @@ class TicketInsideView(discord.ui.View):
         view = RushPaymentView()
         msg = await interaction.channel.send(embed=embed, view=view)
         
-        # Update status to waiting for slip
         if str(interaction.channel.id) in data["active_tickets_v2"]:
             data["active_tickets_v2"][str(interaction.channel.id)]["is_rushing"] = True
             data["active_tickets_v2"][str(interaction.channel.id)]["rush_msg_id"] = msg.id
@@ -553,7 +516,7 @@ class RushConfirmView(discord.ui.View):
         main_config = data["ticket_v2_configs"][str(ticket_info["main_msg_id"])]["buttons"][str(ticket_info["type_idx"])]
         owner_id = main_config["owner_id"]
         
-        # 1. ลบ Embed ชำระเงิน (ต้องหา ID)
+        # 1. ลบ Embed ชำระเงิน
         try:
             rush_msg_id = ticket_info.get("rush_msg_id")
             if rush_msg_id:
@@ -561,14 +524,12 @@ class RushConfirmView(discord.ui.View):
                 await rush_msg.delete()
         except: pass
         
-        # 2. ลบข้อความสลิป (message ของ interaction นี้คือข้อความที่ reply สลิป)
-        # ตัวรูปสลิปคือ message ที่ interaction นี้ reply อยู่ (reference)
+        # 2. ลบข้อความสลิป (และปุ่มยืนยัน)
         try:
-            await interaction.message.delete() # ลบข้อความบอทที่มีปุ่มยืนยัน
+            await interaction.message.delete()
         except: pass
 
         # 3. Rename Channel
-        # เพิ่ม Counter
         guild_id = str(interaction.guild_id)
         if "rush_queue" not in data["guilds"][guild_id]:
             data["guilds"][guild_id]["rush_queue"] = 0
