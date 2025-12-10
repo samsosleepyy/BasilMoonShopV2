@@ -17,12 +17,10 @@ class TicketSystemV2(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    # [FIXED] แก้ไขจุดที่ทำให้บอทค้าง (ย้ายการรอไปไว้ใน restore_views)
     async def cog_load(self):
         self.bot.loop.create_task(self.restore_views())
 
     async def restore_views(self):
-        # รอให้บอทพร้อมใน Background Task แทน
         await self.bot.wait_until_ready()
         print("🔄 Restoring Ticket V2 Views...")
         data = load_data()
@@ -220,14 +218,12 @@ class SetupStep2View(discord.ui.View):
         embed = discord.Embed(title=embed_data["title"], description=embed_data["desc"], color=discord.Color.green())
         if embed_data["image"]: embed.set_image(url=embed_data["image"])
         
-        # สร้าง View ของ Main (ส่งไปก่อนเพื่อเอา ID)
+        # สร้าง View ของ Main
         main_view = TicketLauncherView(None) 
-        msg = await main_channel.send(embed=embed, view=main_view) 
+        msg = await main_channel.send(embed=embed, view=main_view) # ส่งไปก่อนเพื่อเอา ID
+        main_view.msg_id = str(msg.id)
         
-        # Re-build View with proper ID
-        # อัปเดตข้อมูล Config ลงใน View ใหม่
-        new_config = cache["buttons"]
-        new_view = TicketLauncherView(str(msg.id), new_config)
+        new_view = TicketLauncherView(str(msg.id), cache["buttons"])
         await msg.edit(view=new_view)
         
         # 2. ส่ง Console ไปช่อง Console
@@ -264,17 +260,20 @@ class ConfigPriceButton(discord.ui.Button):
         
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id: return
-        await interaction.response.send_modal(PriceConfigModal(self.user_id, self.index))
+        # [FIXED] ส่ง self.view ไปให้ Modal ด้วย เพื่อให้ Modal อ้างอิงกลับมาแก้ปุ่มได้
+        await interaction.response.send_modal(PriceConfigModal(self.user_id, self.index, self.view))
 
 class PriceConfigModal(discord.ui.Modal, title="ตั้งค่าการเร่งงาน"):
     rush_price = discord.ui.TextInput(label="ราคาเร่ง (บาท)", placeholder="ใส่ตัวเลขเท่านั้น", required=True)
     pay_img = discord.ui.TextInput(label="ลิ้งค์รูปชำระเงิน (QR)", required=True)
     owner_id = discord.ui.TextInput(label="ไอดีเจ้าของตั๋ว (User ID)", required=True)
 
-    def __init__(self, user_id, index):
+    # [FIXED] รับ parent_view มาเก็บไว้
+    def __init__(self, user_id, index, parent_view):
         super().__init__()
         self.user_id = user_id
         self.index = index
+        self.parent_view = parent_view
 
     async def on_submit(self, interaction: discord.Interaction):
         try:
@@ -290,12 +289,12 @@ class PriceConfigModal(discord.ui.Modal, title="ตั้งค่าการ�
             "owner_id": int(self.owner_id.value)
         })
         
-        # เปลี่ยนสีปุ่ม
-        for child in self.view.children:
+        # [FIXED] ใช้ self.parent_view แทน self.view
+        for child in self.parent_view.children:
             if isinstance(child, ConfigPriceButton) and child.index == self.index:
                 child.style = discord.ButtonStyle.success
                 break
-        await interaction.response.edit_message(view=self.view)
+        await interaction.response.edit_message(view=self.parent_view)
 
 # ====================================================
 # 🎮 MAIN VIEWS (Launcher & Console)
@@ -306,21 +305,17 @@ class TicketLauncherView(discord.ui.View):
         super().__init__(timeout=None)
         self.msg_id = msg_id
         
-        # ถ้าไม่มี config (ตอน Restore) ให้โหลดจาก DB
         if not buttons_config and msg_id:
             data = load_data()
             if "ticket_v2_configs" in data and msg_id in data["ticket_v2_configs"]:
                 buttons_config = data["ticket_v2_configs"][msg_id]["buttons"]
         
         if buttons_config:
-            # แปลง keys เป็น int เพื่อเรียงลำดับ
             sorted_keys = sorted([int(k) for k in buttons_config.keys()])
             for idx in sorted_keys:
                 conf = buttons_config[str(idx)] if str(idx) in buttons_config else buttons_config[idx]
-                
                 btn_style = discord.ButtonStyle.success if conf["status"] else discord.ButtonStyle.secondary
                 label = conf["label"] 
-                
                 self.add_item(TicketButton(self.msg_id, idx, label, btn_style))
 
 class TicketButton(discord.ui.Button):
@@ -337,11 +332,9 @@ class TicketButton(discord.ui.Button):
         config = data["ticket_v2_configs"][str(self.msg_id)]
         btn_conf = config["buttons"][str(self.type_idx)]
         
-        # 1. เช็คสถานะ
         if not btn_conf["status"]:
             return await interaction.response.send_message("🔴 ตั๋วนี้ถูกปิดใช้งานอยู่ครับ", ephemeral=True)
         
-        # 2. สร้างห้อง
         await interaction.response.defer(ephemeral=True)
         category = interaction.guild.get_channel(btn_conf["category_id"])
         
@@ -358,7 +351,6 @@ class TicketButton(discord.ui.Button):
         ticket_name = f"ticket-{interaction.user.name}"
         channel = await interaction.guild.create_text_channel(ticket_name, category=category, overwrites=overwrites)
         
-        # 3. ส่งข้อความในห้อง
         embed = discord.Embed(description=btn_conf["message"], color=discord.Color.blue())
         if btn_conf["image"]: embed.set_image(url=btn_conf["image"])
         
@@ -367,7 +359,6 @@ class TicketButton(discord.ui.Button):
         
         await interaction.followup.send(f"✅ สร้างห้องแล้ว: {channel.mention}", ephemeral=True)
         
-        # 4. บันทึก Active Ticket
         if "active_tickets_v2" not in data: data["active_tickets_v2"] = {}
         data["active_tickets_v2"][str(channel.id)] = {
             "main_msg_id": self.msg_id,
@@ -408,24 +399,20 @@ class ConsoleToggleButton(discord.ui.Button):
         data = load_data()
         config = data["ticket_v2_configs"][str(self.msg_id)]
         
-        # Toggle Status
         current_status = config["buttons"][str(self.type_idx)]["status"]
         new_status = not current_status
         config["buttons"][str(self.type_idx)]["status"] = new_status
         save_data(data)
         
-        # Update Console View
         self.view = TicketConsoleView(self.msg_id, config["buttons"])
         await interaction.response.edit_message(view=self.view)
         
-        # Update Main View (Embed & Buttons)
         try:
             main_channel_id = config["channel_id"]
             channel = interaction.guild.get_channel(main_channel_id)
             if not channel: channel = await interaction.guild.fetch_channel(main_channel_id)
             msg = await channel.fetch_message(int(self.msg_id))
             
-            # Update Embed Description
             status_text = ""
             for idx, conf in config["buttons"].items():
                 s = "เปิดให้บริการ 🟢" if conf["status"] else "ปิดให้บริการ 🔴"
@@ -516,7 +503,6 @@ class RushConfirmView(discord.ui.View):
         main_config = data["ticket_v2_configs"][str(ticket_info["main_msg_id"])]["buttons"][str(ticket_info["type_idx"])]
         owner_id = main_config["owner_id"]
         
-        # 1. ลบ Embed ชำระเงิน
         try:
             rush_msg_id = ticket_info.get("rush_msg_id")
             if rush_msg_id:
@@ -524,12 +510,10 @@ class RushConfirmView(discord.ui.View):
                 await rush_msg.delete()
         except: pass
         
-        # 2. ลบข้อความสลิป (และปุ่มยืนยัน)
         try:
             await interaction.message.delete()
         except: pass
 
-        # 3. Rename Channel
         guild_id = str(interaction.guild_id)
         if "rush_queue" not in data["guilds"][guild_id]:
             data["guilds"][guild_id]["rush_queue"] = 0
@@ -541,6 +525,5 @@ class RushConfirmView(discord.ui.View):
         new_name = f"{interaction.channel.name}-เร่ง-{count}"
         await interaction.channel.edit(name=new_name)
         
-        # 4. Ping Owner
-        msg = f"<@{owner_id}> 🚨 **{interaction.channel.mention} เร่งงาน!** มาทำเร็วๆ (ลำดับที่ {count})"
+        msg = f"<@{owner_id}> 🚨 **{interaction.channel.mention} เร่งงาน!** มาทำเร็ววววววว (ลำดับที่ {count})"
         await interaction.channel.send(msg)
