@@ -76,32 +76,13 @@ class TicketSystemV2(commands.Cog):
         data = load_data()
         chan_id = str(message.channel.id)
         
-        # เช็คว่าเป็นห้อง Ticket V2 หรือไม่
         if "active_tickets_v2" in data and chan_id in data["active_tickets_v2"]:
             ticket_info = data["active_tickets_v2"][chan_id]
-            
-            # เช็คว่ากำลังรอสลิปอยู่ไหม (is_rushing = True) และมีรูปส่งมา
             if ticket_info.get("is_rushing") and message.attachments:
                 att = message.attachments[0]
                 if att.content_type and att.content_type.startswith("image/"):
-                    
-                    # [UPDATED] ค้นหา Owner ID เพื่อแท็ก
-                    owner_ping = ""
-                    try:
-                        main_msg_id = str(ticket_info["main_msg_id"])
-                        type_idx = str(ticket_info["type_idx"])
-                        
-                        if main_msg_id in data["ticket_v2_configs"]:
-                            btn_config = data["ticket_v2_configs"][main_msg_id]["buttons"].get(type_idx)
-                            if btn_config:
-                                owner_id = btn_config.get("owner_id")
-                                if owner_id:
-                                    owner_ping = f"<@{owner_id}> "
-                    except Exception as e:
-                        print(f"Error fetching owner ID: {e}")
-
                     view = RushConfirmView(chan_id)
-                    await message.reply(f"{owner_ping}🧾 **ได้รับสลิปแล้ว**\nแอดมินโปรดตรวจสอบและกดปุ่มด้านล่างเพื่อยืนยันการเร่งงาน", view=view)
+                    await message.reply("🧾 **ได้รับสลิปแล้ว**\nแอดมินตรวจสอบและกดปุ่มด้านล่างเพื่อยืนยันการเร่งงาน", view=view)
 
 async def setup(bot):
     await bot.add_cog(TicketSystemV2(bot))
@@ -209,13 +190,24 @@ class SetupStep2View(discord.ui.View):
         self.user_id = user_id
         cache = setup_cache.get(user_id)
         
+        # [FIXED] จัด Row ให้ไม่ชนกัน (Select Menu กินที่ทั้งแถว)
+        # Row 0: ปุ่มตั้งค่า Placeholder
         self.add_item(SetPlaceholderButton(user_id))
-        self.add_item(StyleSelectMenu(user_id))
         
+        # Row 1: Select Menu (Style)
+        self.add_item(StyleSelectMenu(user_id)) 
+        
+        # Row 2+: ปุ่ม Config ราคา (เริ่มที่ Row 2)
+        # เนื่องจากปุ่มมีได้ถึง 20 ปุ่ม และ Discord จำกัด 5 แถว...
+        # ดังนั้นต้องระวัง! แต่ SetupStep1 เรามีปุ่ม 1-20 อยู่แล้ว
+        # ใน SetupStep2 เราจะแสดงเฉพาะปุ่มที่ "ตั้งค่ามาแล้ว"
+        # แต่เพื่อความปลอดภัย ผมจะใส่ปุ่ม Config ราคาแบบอัตโนมัติ (ไม่ระบุ row ตายตัว)
+        # Discord.py จะจัดเรียงให้อัตโนมัติในแถวถัดไป
         for idx, info in cache["buttons"].items():
             self.add_item(ConfigPriceButton(user_id, idx, info["label"]))
 
-    @discord.ui.button(label="เสร็จสิ้น ✅", style=discord.ButtonStyle.success, row=4)
+    # ปุ่มเสร็จสิ้น (Discord จะปัดไปอยู่แถวสุดท้ายเอง)
+    @discord.ui.button(label="เสร็จสิ้น ✅", style=discord.ButtonStyle.success)
     async def finish(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id: return
         await interaction.response.defer()
@@ -227,7 +219,6 @@ class SetupStep2View(discord.ui.View):
         embed = discord.Embed(title=embed_data["title"], description=embed_data["desc"], color=discord.Color.green())
         if embed_data["image"]: embed.set_image(url=embed_data["image"])
         
-        # Dummy View to get ID
         dummy_view = TicketLauncherView(None) 
         msg = await main_channel.send(embed=embed, view=dummy_view) 
         
@@ -261,6 +252,7 @@ class SetupStep2View(discord.ui.View):
 
 class SetPlaceholderButton(discord.ui.Button):
     def __init__(self, user_id):
+        # [FIXED] ระบุ Row 0 ชัดเจน
         super().__init__(label="ตั้งค่าข้อความรอเลือก (Placeholder)", style=discord.ButtonStyle.primary, row=0)
         self.user_id = user_id
 
@@ -286,7 +278,8 @@ class StyleSelectMenu(discord.ui.Select):
             discord.SelectOption(label="แบบปุ่มกด (Buttons)", value="buttons", emoji="🔘", description="ปุ่มกดเรียงกัน (กดง่าย)"),
             discord.SelectOption(label="แบบเมนูเลือก (Dropdown)", value="dropdown", emoji="🔻", description="เมนูเลื่อนลง (ประหยัดที่)")
         ]
-        super().__init__(placeholder="เลือกรูปแบบปุ่มเปิดตั๋ว...", min_values=1, max_values=1, options=options, row=0)
+        # [FIXED] ระบุ Row 1 ชัดเจน (แยกกับปุ่มข้างบน)
+        super().__init__(placeholder="เลือกรูปแบบปุ่มเปิดตั๋ว...", min_values=1, max_values=1, options=options, row=1)
         self.user_id = user_id
 
     async def callback(self, interaction: discord.Interaction):
@@ -296,6 +289,7 @@ class StyleSelectMenu(discord.ui.Select):
 
 class ConfigPriceButton(discord.ui.Button):
     def __init__(self, user_id, index, label):
+        # [FIXED] ไม่ระบุ Row ปล่อยให้ Discord จัดเรียงต่อจาก Row 1 เอง
         super().__init__(label=f"ตั้งค่า: {label}", style=discord.ButtonStyle.secondary)
         self.user_id = user_id
         self.index = index
@@ -364,7 +358,6 @@ class TicketLauncherView(discord.ui.View):
             else:
                 sorted_keys = sorted([int(k) for k in buttons_config.keys()])
                 for idx in sorted_keys:
-                    # รองรับทั้ง Key int และ str
                     conf = buttons_config[str(idx)] if str(idx) in buttons_config else buttons_config[idx]
                     is_disabled = not conf["status"]
                     btn_style = discord.ButtonStyle.success if conf["status"] else discord.ButtonStyle.secondary
@@ -548,13 +541,9 @@ class TicketInsideView(discord.ui.View):
     @discord.ui.button(label="เร่งงาน 🔥", style=discord.ButtonStyle.primary, custom_id="tkv2_rush")
     async def rush_work(self, interaction: discord.Interaction, button: discord.ui.Button):
         data = load_data()
-        config = data["ticket_v2_configs"][str(self.main_msg_id)]["buttons"]
-        
-        key = str(self.type_idx) if str(self.type_idx) in config else self.type_idx
-        btn_conf = config[key]
-        
-        price = btn_conf["rush_price"]
-        img_url = btn_conf["pay_img"]
+        config = data["ticket_v2_configs"][str(self.main_msg_id)]["buttons"][str(self.type_idx)]
+        price = config["rush_price"]
+        img_url = config["pay_img"]
         embed = discord.Embed(title="🔥 บริการเร่งงาน", description=f"ค่าบริการ: **{price} บาท**\nโปรดโอนเงินและส่งสลิปในห้องนี้", color=discord.Color.orange())
         embed.set_image(url=img_url)
         view = RushPaymentView()
@@ -581,7 +570,7 @@ class RushConfirmView(discord.ui.View):
     def __init__(self, chan_id):
         super().__init__(timeout=None)
         self.chan_id = chan_id
-    @discord.ui.button(label="ยืนยันได้รับเงิน ✅ (Admin Only)", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="ยืนยันการโอน ✅ (Admin Only)", style=discord.ButtonStyle.success)
     async def confirm_slip(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not is_admin_or_has_permission(interaction): 
              return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
@@ -589,11 +578,7 @@ class RushConfirmView(discord.ui.View):
         data = load_data()
         ticket_info = data["active_tickets_v2"].get(str(interaction.channel.id))
         if not ticket_info: return
-        
-        config = data["ticket_v2_configs"][str(ticket_info["main_msg_id"])]["buttons"]
-        key = str(ticket_info["type_idx"]) if str(ticket_info["type_idx"]) in config else ticket_info["type_idx"]
-        main_config = config[key]
-        
+        main_config = data["ticket_v2_configs"][str(ticket_info["main_msg_id"])]["buttons"][str(ticket_info["type_idx"])]
         owner_id = main_config["owner_id"]
         try:
             rush_msg_id = ticket_info.get("rush_msg_id")
@@ -610,5 +595,5 @@ class RushConfirmView(discord.ui.View):
         save_data(data)
         new_name = f"{interaction.channel.name}-เร่ง-{count}"
         await interaction.channel.edit(name=new_name)
-        msg = f"*{interaction.channel.mention} เร่งงาน!** ลำดับที่ {count}"
+        msg = f"🚨 **{interaction.channel.mention} เร่งงาน ลำดับที่ {count}"
         await interaction.channel.send(msg)
