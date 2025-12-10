@@ -142,13 +142,20 @@ class ConfigTypeButton(discord.ui.Button):
 
 # --- Modals Step 1 ---
 class MainEmbedModal(discord.ui.Modal, title="ตั้งค่า Embed หลัก"):
-    title_inp = discord.ui.TextInput(label="หัวข้อ (Title)", required=True)
-    desc_inp = discord.ui.TextInput(label="เนื้อหา (Description)", style=discord.TextStyle.paragraph, required=True)
-    img_inp = discord.ui.TextInput(label="ลิ้งค์รูปภาพ (Optional)", required=False)
-    
     def __init__(self, user_id):
         super().__init__()
         self.user_id = user_id
+        
+        # ดึงค่าเดิมมาใส่ (ถ้ามี)
+        data = setup_cache.get(user_id, {}).get("embed_data", {})
+        
+        self.title_inp = discord.ui.TextInput(label="หัวข้อ (Title)", default=data.get("title", ""), required=True)
+        self.desc_inp = discord.ui.TextInput(label="เนื้อหา (Description)", style=discord.TextStyle.paragraph, default=data.get("desc", ""), required=True)
+        self.img_inp = discord.ui.TextInput(label="ลิ้งค์รูปภาพ (Optional)", default=data.get("image") or "", required=False)
+        
+        self.add_item(self.title_inp)
+        self.add_item(self.desc_inp)
+        self.add_item(self.img_inp)
         
     async def on_submit(self, interaction: discord.Interaction):
         setup_cache[self.user_id]["embed_data"] = {
@@ -159,16 +166,24 @@ class MainEmbedModal(discord.ui.Modal, title="ตั้งค่า Embed หล
         await interaction.response.send_message("✅ บันทึก Embed หลักแล้ว", ephemeral=True)
 
 class TypeConfigModal(discord.ui.Modal, title="ตั้งค่าปุ่ม"):
-    label = discord.ui.TextInput(label="ชื่อปุ่ม (Title)", required=True)
-    cat_id = discord.ui.TextInput(label="ไอดีหมวดหมู่ (Category ID)", required=True)
-    msg_content = discord.ui.TextInput(label="ข้อความในห้อง (Message)", style=discord.TextStyle.paragraph, required=True)
-    img_url = discord.ui.TextInput(label="ลิ้งค์รูปในห้อง (Optional)", required=False)
-
     def __init__(self, user_id, index, parent_view):
         super().__init__()
         self.user_id = user_id
         self.index = index
         self.parent_view = parent_view
+        
+        # ดึงค่าเดิมมาใส่ (ถ้ามี)
+        btn_data = setup_cache.get(user_id, {}).get("buttons", {}).get(index, {})
+        
+        self.label = discord.ui.TextInput(label="ชื่อปุ่ม (Title)", default=btn_data.get("label", ""), required=True)
+        self.cat_id = discord.ui.TextInput(label="ไอดีหมวดหมู่ (Category ID)", default=str(btn_data.get("category_id", "")), required=True)
+        self.msg_content = discord.ui.TextInput(label="ข้อความในห้อง (Message)", style=discord.TextStyle.paragraph, default=btn_data.get("message", ""), required=True)
+        self.img_url = discord.ui.TextInput(label="ลิ้งค์รูปในห้อง (Optional)", default=btn_data.get("image") or "", required=False)
+
+        self.add_item(self.label)
+        self.add_item(self.cat_id)
+        self.add_item(self.msg_content)
+        self.add_item(self.img_url)
 
     async def on_submit(self, interaction: discord.Interaction):
         try:
@@ -177,13 +192,16 @@ class TypeConfigModal(discord.ui.Modal, title="ตั้งค่าปุ่ม
             return await interaction.response.send_message("❌ ID หมวดหมู่ต้องเป็นตัวเลข", ephemeral=True)
 
         cache = setup_cache[self.user_id]
-        cache["buttons"][self.index] = {
+        # รักษาค่าเดิม (เช่น rush_price) ไว้ถ้ามีอยู่แล้ว
+        existing = cache["buttons"].get(self.index, {})
+        existing.update({
             "label": self.label.value,
             "category_id": int(self.cat_id.value),
             "message": self.msg_content.value,
             "image": self.img_url.value,
             "status": True # เปิดใช้งานเริ่มต้น
-        }
+        })
+        cache["buttons"][self.index] = existing
         
         # เปลี่ยนสีปุ่มที่ตั้งค่าแล้ว
         for child in self.parent_view.children:
@@ -220,7 +238,8 @@ class SetupStep2View(discord.ui.View):
         
         # สร้าง View ของ Main
         main_view = TicketLauncherView(None) 
-        msg = await main_channel.send(embed=embed, view=main_view) 
+        msg = await main_channel.send(embed=embed, view=main_view) # ส่งไปก่อนเพื่อเอา ID
+        main_view.msg_id = str(msg.id)
         
         # Re-build View with proper ID
         new_view = TicketLauncherView(str(msg.id), cache["buttons"])
@@ -260,20 +279,25 @@ class ConfigPriceButton(discord.ui.Button):
         
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id: return
-        # ส่ง self.view (คือ SetupStep2View) เข้าไปให้ Modal
         await interaction.response.send_modal(PriceConfigModal(self.user_id, self.index, self.view))
 
 class PriceConfigModal(discord.ui.Modal, title="ตั้งค่าการเร่งงาน"):
-    rush_price = discord.ui.TextInput(label="ราคาเร่ง (บาท)", placeholder="ใส่ตัวเลขเท่านั้น", required=True)
-    pay_img = discord.ui.TextInput(label="ลิ้งค์รูปชำระเงิน (QR)", required=True)
-    owner_id = discord.ui.TextInput(label="ไอดีเจ้าของตั๋ว (User ID)", required=True)
-
-    # รับ parent_view มาเก็บไว้
     def __init__(self, user_id, index, parent_view):
         super().__init__()
         self.user_id = user_id
         self.index = index
         self.parent_view = parent_view
+        
+        # ดึงค่าเดิม
+        btn_data = setup_cache.get(user_id, {}).get("buttons", {}).get(index, {})
+        
+        self.rush_price = discord.ui.TextInput(label="ราคาเร่ง (บาท)", placeholder="ใส่ตัวเลขเท่านั้น", default=str(btn_data.get("rush_price", "")), required=True)
+        self.pay_img = discord.ui.TextInput(label="ลิ้งค์รูปชำระเงิน (QR)", default=btn_data.get("pay_img", ""), required=True)
+        self.owner_id = discord.ui.TextInput(label="ไอดีเจ้าของตั๋ว (User ID)", default=str(btn_data.get("owner_id", "")), required=True)
+
+        self.add_item(self.rush_price)
+        self.add_item(self.pay_img)
+        self.add_item(self.owner_id)
 
     async def on_submit(self, interaction: discord.Interaction):
         try:
@@ -289,7 +313,7 @@ class PriceConfigModal(discord.ui.Modal, title="ตั้งค่าการ�
             "owner_id": int(self.owner_id.value)
         })
         
-        # [FIXED] ใช้ self.parent_view แทน self.view
+        # เปลี่ยนสีปุ่มเมื่อตั้งค่าเสร็จ
         for child in self.parent_view.children:
             if isinstance(child, ConfigPriceButton) and child.index == self.index:
                 child.style = discord.ButtonStyle.success
