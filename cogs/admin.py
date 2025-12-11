@@ -53,7 +53,7 @@ class AdminSystem(commands.Cog):
     # 🔒 OWNER ONLY COMMANDS
     # =========================================
 
-    @app_commands.command(name="info", description="[Owner Only] ดูข้อมูลบอทและรายชื่อเซิฟเวอร์ทั้งหมด")
+    @app_commands.command(name="info", description="ดูข้อมูลบอท")
     async def info_command(self, interaction: discord.Interaction):
         if not is_owner(interaction):
             return await interaction.response.send_message(MESSAGES["owner_only"], ephemeral=True)
@@ -103,7 +103,7 @@ class AdminSystem(commands.Cog):
             embed.description = f"📜 **รายชื่อเซิฟเวอร์ทั้งหมด**\n\n{server_list_str}"
             await interaction.followup.send(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="whitelist", description="[Owner Only] อนุญาตให้เซิฟเวอร์ใช้บอทได้")
+    @app_commands.command(name="whitelist", description="อนุญาตให้เซิฟเวอร์ใช้บอทได้")
     async def whitelist(self, interaction: discord.Interaction, server_id: str):
         if not is_owner(interaction):
             return await interaction.response.send_message(MESSAGES["owner_only"], ephemeral=True)
