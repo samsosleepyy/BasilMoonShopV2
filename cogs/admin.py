@@ -28,6 +28,41 @@ class AdminSystem(commands.Cog):
         try:
             if not os.path.exists(DATA_FILE): return
             data = load_data()
+            
+            # --- เตรียมข้อความสรุปข้อมูล (Report) ---
+            server_names = []
+            if "guilds" in data:
+                for gid in data["guilds"]:
+                    g = self.bot.get_guild(int(gid))
+                    name = g.name if g else f"Unknown({gid})"
+                    server_names.append(name)
+            
+            server_list = ", ".join(server_names) if server_names else "-"
+            
+            # นับจำนวนระบบต่างๆ
+            count_ticket_v1 = len(data.get('active_tickets', {}))
+            count_ticket_v2 = len(data.get('active_tickets_v2', {}))
+            count_auction = len(data.get('active_auctions', {}))
+            count_gamble = len(data.get('gamble_configs', {}))
+            count_queue = len(data.get('queue_views', {}))
+            count_select = len(data.get('select_menus', {}))
+            count_points = len(data.get('points', {}))
+
+            report_msg = (
+                f"📊 **Auto Backup Report**\n"
+                f"⏰ เวลา: <t:{int(datetime.datetime.now().timestamp())}:f>\n\n"
+                f"🏢 **เซิฟเวอร์ที่มีข้อมูล ({len(server_names)}):**\n`{server_list}`\n\n"
+                f"💾 **ระบบที่บันทึก:**\n"
+                f"• 🎫 Ticket V1 (Active): `{count_ticket_v1}` ห้อง\n"
+                f"• 📨 Ticket V2 (Active): `{count_ticket_v2}` ห้อง\n"
+                f"• 🔨 Auction (Active): `{count_auction}` รายการ\n"
+                f"• 🎰 Gamble Configs: `{count_gamble}` ตู้\n"
+                f"• 📋 Queue Configs: `{count_queue}` ปุ่ม\n"
+                f"• 🔻 Select Menus: `{count_select}` เมนู\n"
+                f"• 💰 User Points: `{count_points}` คน"
+            )
+            # ---------------------------------------
+
             if "guilds" in data:
                 for guild_id_str, guild_data in data["guilds"].items():
                     channel_id = guild_data.get("autobackup_channel")
@@ -41,8 +76,9 @@ class AdminSystem(commands.Cog):
                                 if not safe_name: safe_name = "ServerData"
                                 timestamp = datetime.datetime.now().strftime('%d%m%y-%H%M')
                                 filename = f"{safe_name}-data-{timestamp}.json"
+                                
                                 file = discord.File(DATA_FILE, filename=filename)
-                                await channel.send(content=f"⏰ **Auto Backup** ({datetime.datetime.now().strftime('%H:%M')})", file=file)
+                                await channel.send(content=report_msg, file=file)
                                 print(f"Auto-backup sent to guild {guild_name} ({guild_id_str})")
                         except Exception as e:
                             print(f"Failed to send backup to guild {guild_id_str}: {e}")
@@ -55,10 +91,10 @@ class AdminSystem(commands.Cog):
 
     @app_commands.command(name="info", description="ดูข้อมูลบอท")
     async def info_command(self, interaction: discord.Interaction):
-        if not is_owner(interaction):
-            return await interaction.response.send_message(MESSAGES["owner_only"], ephemeral=True)
-        
         await interaction.response.defer(ephemeral=True)
+
+        if not is_owner(interaction):
+            return await interaction.followup.send(MESSAGES["owner_only"], ephemeral=True)
         
         guilds = self.bot.guilds
         total_guilds = len(guilds)
@@ -105,10 +141,11 @@ class AdminSystem(commands.Cog):
 
     @app_commands.command(name="whitelist", description="อนุญาตให้เซิฟเวอร์ใช้บอทได้")
     async def whitelist(self, interaction: discord.Interaction, server_id: str):
-        if not is_owner(interaction):
-            return await interaction.response.send_message(MESSAGES["owner_only"], ephemeral=True)
-        
         await interaction.response.defer(ephemeral=True)
+
+        if not is_owner(interaction):
+            return await interaction.followup.send(MESSAGES["owner_only"], ephemeral=True)
+        
         data = load_data()
         
         if server_id not in data["whitelisted_guilds"]:
@@ -118,27 +155,26 @@ class AdminSystem(commands.Cog):
         else:
             await interaction.followup.send(f"⚠️ Server ID `{server_id}` มีอยู่ใน Whitelist อยู่แล้ว", ephemeral=True)
 
-    @app_commands.command(name="restore", description="[Owner Only] กู้คืนข้อมูลจากไฟล์ data.json")
+    @app_commands.command(name="restore", description="กู้คืนข้อมูลจากไฟล์ data.json")
     @app_commands.describe(file="ไฟล์ data.json ที่ต้องการกู้คืน")
     async def restore(self, interaction: discord.Interaction, file: discord.Attachment):
+        await interaction.response.defer(ephemeral=True)
+
         if not is_owner(interaction):
-            return await interaction.response.send_message(MESSAGES["owner_only"], ephemeral=True)
+            return await interaction.followup.send(MESSAGES["owner_only"], ephemeral=True)
         
         if not file.filename.endswith(".json"):
-            return await interaction.response.send_message("❌ โปรดอัปโหลดไฟล์ .json เท่านั้น", ephemeral=True)
+            return await interaction.followup.send("❌ โปรดอัปโหลดไฟล์ .json เท่านั้น", ephemeral=True)
             
-        await interaction.response.defer(ephemeral=True)
-        
         try:
             await file.save(DATA_FILE)
             load_data() 
             
-            # [UPDATED] สั่งรีโหลดระบบย่อยทั้งหมดทันที
             cogs_to_reload = [
                 ("QueueSystem", "restore_queue_system"),
                 ("SelectSystem", "restore_select_menus"),
                 ("TicketSystem", "restore_ticket_views"),
-                ("TicketSystemV2", "restore_views"), # ถ้าใช้ V2
+                ("TicketSystemV2", "restore_views"),
                 ("GambleSystem", "restore_gamble_views"),
                 ("AuctionSystem", "restore_auction_views")
             ]
@@ -147,7 +183,6 @@ class AdminSystem(commands.Cog):
             for cog_name, method_name in cogs_to_reload:
                 cog = self.bot.get_cog(cog_name)
                 if cog and hasattr(cog, method_name):
-                    # เรียกใช้ฟังก์ชัน restore ของแต่ละ Cog
                     await getattr(cog, method_name)()
                     restored_count += 1
 
@@ -156,16 +191,17 @@ class AdminSystem(commands.Cog):
             await interaction.followup.send(f"❌ เกิดข้อผิดพลาดในการกู้คืน: {e}", ephemeral=True)
 
     # =========================================
-    # COMMANDS (Admin Permission)
+    # COMMANDS (Admin Permission / Owner Only)
     # =========================================
 
-    @app_commands.command(name="backup", description="สำรองข้อมูล data.json")
+    @app_commands.command(name="backup", description="[Owner Only] สำรองข้อมูล data.json")
     @app_commands.describe(autobackup_log="[Optional] ช่องสำหรับส่ง Auto Backup ทุก 1 ชม.")
     async def backup(self, interaction: discord.Interaction, autobackup_log: discord.TextChannel = None):
-        if not is_admin_or_has_permission(interaction): 
-            return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
-        
         await interaction.response.defer(ephemeral=True)
+
+        # [UPDATED] เปลี่ยนเป็น is_owner
+        if not is_owner(interaction): 
+            return await interaction.followup.send(MESSAGES["owner_only"], ephemeral=True)
         
         if not os.path.exists(DATA_FILE):
             return await interaction.followup.send("❌ ไม่พบไฟล์ข้อมูล (Database ยังไม่ถูกสร้าง)", ephemeral=True)
