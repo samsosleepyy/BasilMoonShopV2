@@ -50,7 +50,7 @@ MESSAGES = {
     # --- ระบบทั่วไป ---
     "no_permission": "🚫 คุณไม่มีสิทธิ์ใช้คำสั่งนี้",
     "owner_only": "🔒 คำสั่งนี้สำหรับ **Owner** เท่านั้น",
-    "whitelist_only": "🔒 เซิฟเวอร์นี้ยังไม่ได้รับอนุญาตให้ใช้บอท (Not Whitelisted)",
+    "whitelist_only": "🔒 **เซิฟเวอร์ของคุณไม่ได้รับอนุญาตให้ใช้บอท**\nกรุณาติดต่อ <@904046392106967122> ที่ดิส [Sleepy MCPE](https://discord.gg/FnmWw7nWyq) หรือ [Sea muww](https://discord.gg/WetDpz9Uqj) เพื่อสะดวกต่อการใช้ด้วย",
     "cmd_success": "✅ ดำเนินการเรียบร้อย",
     "loading": "⏳ กำลังประมวลผล...",
     "processing": "⚙️ กำลังดำเนินการ...",
