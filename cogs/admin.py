@@ -144,7 +144,7 @@ class AdminSystem(commands.Cog):
         else:
             await interaction.followup.send(f"⚠️ Server ID `{server_id}` มีอยู่ใน Whitelist อยู่แล้ว", ephemeral=True)
 
-    @app_commands.command(name="restore", description="[Owner Only] กู้คืนข้อมูลจากไฟล์ data.json")
+    @app_commands.command(name="restore", description="กู้คืนข้อมูลจากไฟล์ data.json")
     @app_commands.describe(file="ไฟล์ data.json ที่ต้องการกู้คืน")
     async def restore(self, interaction: discord.Interaction, file: discord.Attachment):
         await interaction.response.defer(ephemeral=True)
@@ -204,7 +204,7 @@ class AdminSystem(commands.Cog):
     # =========================================
     # [UPDATED] RESET DATA COMMAND (Owner/Admin)
     # =========================================
-    @app_commands.command(name="resetdata", description="[Owner Only] เลือกลบข้อมูลของเซิฟเวอร์ต่างๆ")
+    @app_commands.command(name="resetdata", description="เลือกลบข้อมูลของเซิฟเวอร์ต่างๆ")
     async def resetdata(self, interaction: discord.Interaction):
         # เปลี่ยนเป็น Owner Only เพื่อความปลอดภัยเพราะเข้าถึง Database ทั้งหมด
         if not is_owner(interaction):
