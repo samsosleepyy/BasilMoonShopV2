@@ -86,7 +86,7 @@ class AdminSystem(commands.Cog):
     # 🔒 OWNER ONLY COMMANDS
     # =========================================
 
-    @app_commands.command(name="info", description="[Owner Only] ดูข้อมูลบอทและรายชื่อเซิฟเวอร์ทั้งหมด")
+    @app_commands.command(name="info", description="ดูข้อมูลบอท")
     async def info_command(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         if not is_owner(interaction):
@@ -204,7 +204,7 @@ class AdminSystem(commands.Cog):
     # =========================================
     # [UPDATED] RESET DATA COMMAND (Advanced)
     # =========================================
-    @app_commands.command(name="resetdata", description="[Owner Only] เลือกลบข้อมูลของเซิฟเวอร์ต่างๆ")
+    @app_commands.command(name="resetdata", description="เลือกลบข้อมูล")
     async def resetdata(self, interaction: discord.Interaction):
         if not is_owner(interaction):
              return await interaction.response.send_message(MESSAGES["owner_only"], ephemeral=True)
@@ -219,7 +219,7 @@ class AdminSystem(commands.Cog):
         view = ServerPaginationView(guild_ids, self.bot)
         await interaction.followup.send("🗑️ **เลือกเซิฟเวอร์ที่ต้องการลบข้อมูล:**", view=view)
 
-    # ... (Command อื่นๆ คงเดิม: anti-raid, addadmin, etc.) ...
+    # ... (Command อื่นๆ คงเดิม) ...
     @app_commands.command(name="anti-raid", description=MESSAGES["desc_antiraid"])
     async def antiraid(self, interaction: discord.Interaction, status: bool, log_channel: discord.TextChannel):
         await interaction.response.defer(ephemeral=True)
@@ -289,11 +289,6 @@ class AdminSystem(commands.Cog):
         save_data(data)
         await interaction.followup.send(MESSAGES["sys_lockdown_set"].format(seconds=seconds), ephemeral=True)
 
-    @app_commands.command(name="resetdata", description=MESSAGES["desc_resetdata"])
-    async def resetdata_legacy(self, interaction: discord.Interaction):
-        # เก็บฟังก์ชันนี้ไว้สำรอง หรือจะลบออกก็ได้ถ้าใช้ตัวบนแล้ว
-        await self.resetdata(interaction)
-
     @app_commands.command(name="addpoint", description=MESSAGES["desc_addpoint"])
     async def addpoint(self, interaction: discord.Interaction, user: discord.User, amount: int):
         await interaction.response.defer(ephemeral=True)
@@ -318,7 +313,7 @@ class AdminSystem(commands.Cog):
         await interaction.followup.send(f"{MESSAGES['pt_remove_success'].format(amount=amount, user=user.mention)} ({MESSAGES['pt_current'].format(points=new_bal)})", ephemeral=True)
 
 # =========================================
-# 📄 RESET DATA VIEWS (Enhanced)
+# 📄 RESET DATA VIEWS (Pagination & Selection)
 # =========================================
 
 class ServerPaginationView(discord.ui.View):
@@ -379,24 +374,15 @@ class ResetSystemSelectorView(discord.ui.View):
         super().__init__(timeout=None)
         self.add_item(ResetSystemSelect(guild_id, bot))
         
-        # Add Back Button
         back_btn = discord.ui.Button(label="🔙 กลับไปหน้ารายชื่อ", style=discord.ButtonStyle.secondary, row=4)
         back_btn.callback = self.back_to_list
         self.add_item(back_btn)
 
-    def back_to_list(self, interaction: discord.Interaction):
-        # Cannot easily go back to previous view state without storing it, 
-        # so we recreate pagination view page 0.
-        # Ideally we pass parent view, but for simplicity:
-        pass # To implement back button perfectly, we need to pass data back. 
-        # For now let's just edit message content to say 'Cancelled'.
-        # Or better:
-        async def callback(interaction: discord.Interaction):
-            data = load_data()
-            guild_ids = list(data.get("guilds", {}).keys())
-            view = ServerPaginationView(guild_ids, interaction.client)
-            await interaction.response.edit_message(content="🗑️ **เลือกเซิฟเวอร์ที่ต้องการลบข้อมูล:**", view=view)
-        self.back_to_list = callback
+    async def back_to_list(self, interaction: discord.Interaction):
+        data = load_data()
+        guild_ids = list(data.get("guilds", {}).keys())
+        view = ServerPaginationView(guild_ids, interaction.client)
+        await interaction.response.edit_message(content="🗑️ **เลือกเซิฟเวอร์ที่ต้องการลบข้อมูล:**", view=view)
 
 class ResetSystemSelect(discord.ui.Select):
     def __init__(self, guild_id, bot):
@@ -405,23 +391,17 @@ class ResetSystemSelect(discord.ui.Select):
         
         data = load_data()
         
-        # Calculate Counts
         tk2_count = 0
-        tk2_items = []
         if "ticket_v2_configs" in data:
             for mid, conf in data["ticket_v2_configs"].items():
-                # Check guild via channel
                 chan = bot.get_channel(conf["channel_id"])
                 if chan and str(chan.guild.id) == self.guild_id:
                     tk2_count += 1
-                    tk2_items.append({"id": mid, "name": conf["embed_data"]["title"]})
-                elif not chan: # Channel might be deleted, try to guess or skip? 
-                    # If we can't find channel, we can't verify guild. 
-                    # But if we assume data["guilds"] has it? No.
+                elif not chan:
+                    # ถ้าหาห้องไม่เจอ แต่ข้อมูลอาจยังอยู่ (ถ้าแน่ใจว่าลบได้ก็ลบ)
                     pass
 
         gamble_count = 0
-        gamble_items = []
         if "gamble_configs" in data:
             for mid, conf in data["gamble_configs"].items():
                 chan_id = conf.get("target_channel")
@@ -429,19 +409,10 @@ class ResetSystemSelect(discord.ui.Select):
                     chan = bot.get_channel(chan_id)
                     if chan and str(chan.guild.id) == self.guild_id:
                         gamble_count += 1
-                        gamble_items.append({"id": mid, "name": f"ตู้กาชา (Msg: {mid[-4:]})"})
-
-        auc_count = 0
-        if "active_auctions" in data:
-             for cid, conf in data["active_auctions"].items():
-                 chan = bot.get_channel(int(cid))
-                 if chan and str(chan.guild.id) == self.guild_id:
-                     auc_count += 1
 
         options = [
             discord.SelectOption(label=f"Ticket V2 Panels (มี {tk2_count} รายการ)", value="ticket_v2", emoji="🎫", description="เลือกลบแผงตั๋ว V2 แบบเจาะจง"),
             discord.SelectOption(label=f"Gamble Machines (มี {gamble_count} รายการ)", value="gamble", emoji="🎰", description="เลือกลบตู้กาชาแบบเจาะจง"),
-            # discord.SelectOption(label=f"Active Auctions (มี {auc_count} รายการ)", value="auction", emoji="🔨"), # Auctions usually end quickly, maybe global reset is enough
             discord.SelectOption(label="ตั้งค่าทั่วไป / รีเซ็ตตัวนับ", value="general", emoji="⚙️", description="รีเซ็ตเลขคิว, ประวัติ, Anti-Raid ฯลฯ"),
             discord.SelectOption(label="⚠️ ลบข้อมูลเซิฟเวอร์นี้ทั้งหมด", value="all", emoji="💥", description="ลบทุกอย่างออกจาก Database"),
         ]
@@ -455,7 +426,6 @@ class ResetSystemSelect(discord.ui.Select):
             await interaction.response.edit_message(content="⚙️ **เลือกข้อมูลทั่วไปที่ต้องการรีเซ็ต (เลือกได้หลายอัน):**", view=view)
         
         elif val == "ticket_v2":
-            # Show list of Ticket V2 panels
             view = DeleteItemListView(self.guild_id, "ticket_v2", self.bot)
             if not view.options_available:
                 await interaction.response.send_message("❌ ไม่พบข้อมูล Ticket V2 ในเซิฟเวอร์นี้", ephemeral=True)
@@ -470,7 +440,6 @@ class ResetSystemSelect(discord.ui.Select):
                 await interaction.response.edit_message(content="🎰 **เลือกตู้กาชาที่ต้องการลบ:**", view=view)
         
         elif val == "all":
-            # Confirmation View could be added here
             data = load_data()
             if self.guild_id in data["guilds"]:
                 del data["guilds"][self.guild_id]
@@ -564,7 +533,7 @@ class DeleteItemSelect(discord.ui.Select):
                     if chan and str(chan.guild.id) == str(guild_id):
                         title = conf["embed_data"].get("title", "No Title")[:50]
                         options.append(discord.SelectOption(label=f"{title}", value=mid, description=f"Channel: {chan.name}", emoji="🎫"))
-                        if len(options) >= 25: break # Discord Limit
+                        if len(options) >= 25: break 
 
         elif data_type == "gamble":
             if "gamble_configs" in data:
@@ -598,14 +567,10 @@ class DeleteItemSelect(discord.ui.Select):
         elif self.data_type == "gamble":
             if val in data["gamble_configs"]:
                 del data["gamble_configs"][val]
-                # Cleanup related data
                 if "gamble_stats" in data and val in data["gamble_stats"]: del data["gamble_stats"][val]
                 if "claimed_prizes" in data and val in data["claimed_prizes"]: del data["claimed_prizes"][val]
                 save_data(data)
                 await interaction.followup.send(f"✅ ลบตู้กาชา (ID: {val}) เรียบร้อยแล้ว", ephemeral=True)
-        
-        # Refresh the view by re-sending? Or just edit
-        # For simplicity, we just notify. User can run command again if needed.
 
 async def setup(bot):
     await bot.add_cog(AdminSystem(bot))
