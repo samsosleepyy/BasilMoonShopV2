@@ -12,13 +12,12 @@ class TicketSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    # [FIXED] ใช้ create_task
     async def cog_load(self):
         self.bot.loop.create_task(self.restore_ticket_views())
 
     async def restore_ticket_views(self):
         await self.bot.wait_until_ready()
-        print("🔄 Restoring Ticket Views...")
+        print("🔄 Restoring Ticket Forums Views...")
         
         self.bot.add_view(TicketForumView())
         
@@ -41,8 +40,8 @@ class TicketSystem(commands.Cog):
                     print(f"Failed to restore ticket control view {channel_id}: {e}")
         print(f"✅ Restored {count} active ticket controls.")
 
-    @app_commands.command(name="ticketf", description=MESSAGES["desc_ticketf"])
-    async def ticketf(self, interaction: discord.Interaction, category: discord.CategoryChannel, forum: discord.ForumChannel, log_channel: discord.TextChannel = None):
+    @app_commands.command(name="ticket-forums", description=MESSAGES["desc_ticketf"])
+    async def ticket_forums(self, interaction: discord.Interaction, category: discord.CategoryChannel, forum: discord.ForumChannel, log_channel: discord.TextChannel = None):
         if not is_admin_or_has_permission(interaction): return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
         data = load_data()
         init_guild_data(data, interaction.guild_id)
@@ -65,7 +64,6 @@ class TicketSystem(commands.Cog):
             await asyncio.sleep(1)
             await thread.send(MESSAGES["tf_guide_msg"], view=TicketForumView())
 
-# ... (ส่วน View ของ Ticket คงเดิม ใช้โค้ดเก่าได้เลย) ...
 class TicketForumView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -106,7 +104,6 @@ class TicketForumView(discord.ui.View):
         view = TicketControlView(interaction.channel.id, conf["log_id"], interaction.user.id, interaction.channel.owner_id, interaction.message.id, count)
         await ticket_chan.send(msg, view=view)
 
-        # [NEW] บันทึก Active Ticket ลง DB เพื่อให้กู้คืนได้
         if "active_tickets" not in data: data["active_tickets"] = {}
         data["active_tickets"][str(ticket_chan.id)] = {
             "forum_thread_id": interaction.channel.id,
@@ -137,12 +134,29 @@ class ReportModal(discord.ui.Modal, title=MESSAGES["tf_modal_report_title"]):
         
         if conf and conf["log_id"]:
             log = interaction.guild.get_channel(conf["log_id"])
+            
+            # [NEW] สร้างข้อความ Ping Admin & Support
+            pings = []
+            # หา Admin
+            for admin_id in data.get("admins", []):
+                if interaction.guild.get_role(admin_id): pings.append(f"<@&{admin_id}>")
+                else: pings.append(f"<@{admin_id}>")
+            # หา Support
+            for sup_id in data.get("supports", []):
+                if interaction.guild.get_role(sup_id): pings.append(f"<@&{sup_id}>")
+                else: pings.append(f"<@{sup_id}>")
+            
+            ping_msg = " ".join(pings) if pings else "-# ยังมีมีการเพิ่ม supportadmin" # ถ้าไม่มีใครให้ ping @here แทน
+
             embed = discord.Embed(title=MESSAGES["tf_log_report_title"], color=discord.Color.orange())
             embed.add_field(name="📍 ฟอรั่ม", value=interaction.channel.mention, inline=False)
             embed.add_field(name="👤 ผู้รายงาน", value=interaction.user.mention, inline=True)
             embed.add_field(name="📝 เหตุผล", value=self.reason.value, inline=False)
             embed.timestamp = datetime.datetime.now()
-            await log.send(embed=embed)
+            
+            # ส่ง Embed พร้อม Ping
+            await log.send(content=f"🚨 **มีการรายงานเข้ามา!** {ping_msg}", embed=embed)
+        
         await interaction.response.send_message(MESSAGES["tf_msg_report_success"], ephemeral=True)
 
 class TicketControlView(discord.ui.View):
@@ -207,7 +221,6 @@ class TicketCancelModal(discord.ui.Modal, title=MESSAGES["tf_modal_cancel_title"
         
         await interaction.response.send_message(f"ยกเลิกโดย {interaction.user.mention}\nเหตุผล: {self.reason.value}")
         
-        # [NEW] ลบ Active Ticket ออกจาก DB เพราะจบงานแล้ว
         data = load_data()
         if "active_tickets" in data and str(interaction.channel_id) in data["active_tickets"]:
             del data["active_tickets"][str(interaction.channel_id)]
@@ -249,7 +262,6 @@ class AdminCloseView(discord.ui.View):
                 if thread: await thread.delete()
             except: pass
         
-        # [NEW] ลบ Active Ticket ออกจาก DB
         data = load_data()
         if "active_tickets" in data and str(interaction.channel_id) in data["active_tickets"]:
             del data["active_tickets"][str(interaction.channel_id)]
@@ -260,7 +272,6 @@ class AdminCloseView(discord.ui.View):
         if not is_support_or_admin(interaction): return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
         await interaction.channel.delete()
         
-        # [NEW] ลบ Active Ticket ออกจาก DB
         data = load_data()
         if "active_tickets" in data and str(interaction.channel_id) in data["active_tickets"]:
             del data["active_tickets"][str(interaction.channel_id)]
