@@ -86,7 +86,7 @@ class AdminSystem(commands.Cog):
     # 🔒 OWNER ONLY COMMANDS
     # =========================================
 
-    @app_commands.command(name="info", description="ดูข้อมูลบอท")
+    @app_commands.command(name="info", description="[Owner Only] ดูข้อมูลบอทและรายชื่อเซิฟเวอร์ทั้งหมด")
     async def info_command(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         if not is_owner(interaction):
@@ -144,7 +144,7 @@ class AdminSystem(commands.Cog):
         else:
             await interaction.followup.send(f"⚠️ Server ID `{server_id}` มีอยู่ใน Whitelist อยู่แล้ว", ephemeral=True)
 
-    @app_commands.command(name="restore", description="กู้คืนข้อมูลจากไฟล์ data.json")
+    @app_commands.command(name="restore", description="[Owner Only] กู้คืนข้อมูลจากไฟล์ data.json")
     @app_commands.describe(file="ไฟล์ data.json ที่ต้องการกู้คืน")
     async def restore(self, interaction: discord.Interaction, file: discord.Attachment):
         await interaction.response.defer(ephemeral=True)
@@ -204,7 +204,7 @@ class AdminSystem(commands.Cog):
     # =========================================
     # [UPDATED] RESET DATA COMMAND (Advanced)
     # =========================================
-    @app_commands.command(name="resetdata", description="เลือกลบข้อมูลต่างๆ")
+    @app_commands.command(name="resetdata", description="[Owner Only] เลือกลบข้อมูลของเซิฟเวอร์ต่างๆ")
     async def resetdata(self, interaction: discord.Interaction):
         if not is_owner(interaction):
              return await interaction.response.send_message(MESSAGES["owner_only"], ephemeral=True)
