@@ -130,7 +130,7 @@ class AdminSystem(commands.Cog):
             embed.description = f"📜 **รายชื่อเซิฟเวอร์ทั้งหมด**\n\n{server_list_str}"
             await interaction.followup.send(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="whitelist", description="อนุญาตให้เซิฟเวอร์ใช้บอทได้")
+    @app_commands.command(name="whitelist", description="[Owner Only] อนุญาตให้เซิฟเวอร์ใช้บอทได้")
     async def whitelist(self, interaction: discord.Interaction, server_id: str):
         await interaction.response.defer(ephemeral=True)
         if not is_owner(interaction):
@@ -175,7 +175,7 @@ class AdminSystem(commands.Cog):
         except Exception as e:
             await interaction.followup.send(f"❌ เกิดข้อผิดพลาดในการกู้คืน: {e}", ephemeral=True)
 
-    @app_commands.command(name="backup", description="สำรองข้อมูล data.json")
+    @app_commands.command(name="backup", description="[Owner Only] สำรองข้อมูล data.json")
     async def backup(self, interaction: discord.Interaction, autobackup_log: discord.TextChannel = None):
         await interaction.response.defer(ephemeral=True)
         if not is_owner(interaction): 
@@ -202,18 +202,16 @@ class AdminSystem(commands.Cog):
             await interaction.followup.send("📦 **ไฟล์ Backup ข้อมูลปัจจุบัน**", file=file, ephemeral=True)
 
     # =========================================
-    # [UPDATED] RESET DATA COMMAND (Owner/Admin)
+    # [UPDATED] RESET DATA COMMAND (Advanced)
     # =========================================
-    @app_commands.command(name="resetdata", description="เลือกลบข้อมูลของเซิฟเวอร์ต่างๆ")
+    @app_commands.command(name="resetdata", description="เลือกลบข้อมูลต่างๆ")
     async def resetdata(self, interaction: discord.Interaction):
-        # เปลี่ยนเป็น Owner Only เพื่อความปลอดภัยเพราะเข้าถึง Database ทั้งหมด
         if not is_owner(interaction):
              return await interaction.response.send_message(MESSAGES["owner_only"], ephemeral=True)
         
         await interaction.response.defer(ephemeral=True)
         data = load_data()
         
-        # ดึงรายชื่อ Guild ที่มีข้อมูล
         guild_ids = list(data.get("guilds", {}).keys())
         if not guild_ids:
             return await interaction.followup.send("❌ ไม่พบข้อมูลเซิฟเวอร์ในฐานข้อมูล", ephemeral=True)
@@ -221,7 +219,7 @@ class AdminSystem(commands.Cog):
         view = ServerPaginationView(guild_ids, self.bot)
         await interaction.followup.send("🗑️ **เลือกเซิฟเวอร์ที่ต้องการลบข้อมูล:**", view=view)
 
-    # ... (Command อื่นๆ คงเดิม) ...
+    # ... (Command อื่นๆ คงเดิม: anti-raid, addadmin, etc.) ...
     @app_commands.command(name="anti-raid", description=MESSAGES["desc_antiraid"])
     async def antiraid(self, interaction: discord.Interaction, status: bool, log_channel: discord.TextChannel):
         await interaction.response.defer(ephemeral=True)
@@ -235,7 +233,6 @@ class AdminSystem(commands.Cog):
 
     @commands.Cog.listener()
     async def on_webhooks_update(self, channel):
-        # (Anti-raid logic เหมือนเดิม)
         pass
 
     @app_commands.command(name="addadmin", description=MESSAGES["desc_addadmin"])
@@ -292,6 +289,11 @@ class AdminSystem(commands.Cog):
         save_data(data)
         await interaction.followup.send(MESSAGES["sys_lockdown_set"].format(seconds=seconds), ephemeral=True)
 
+    @app_commands.command(name="resetdata", description=MESSAGES["desc_resetdata"])
+    async def resetdata_legacy(self, interaction: discord.Interaction):
+        # เก็บฟังก์ชันนี้ไว้สำรอง หรือจะลบออกก็ได้ถ้าใช้ตัวบนแล้ว
+        await self.resetdata(interaction)
+
     @app_commands.command(name="addpoint", description=MESSAGES["desc_addpoint"])
     async def addpoint(self, interaction: discord.Interaction, user: discord.User, amount: int):
         await interaction.response.defer(ephemeral=True)
@@ -316,7 +318,7 @@ class AdminSystem(commands.Cog):
         await interaction.followup.send(f"{MESSAGES['pt_remove_success'].format(amount=amount, user=user.mention)} ({MESSAGES['pt_current'].format(points=new_bal)})", ephemeral=True)
 
 # =========================================
-# 📄 RESET DATA VIEWS (Pagination & Selection)
+# 📄 RESET DATA VIEWS (Enhanced)
 # =========================================
 
 class ServerPaginationView(discord.ui.View):
@@ -330,30 +332,25 @@ class ServerPaginationView(discord.ui.View):
 
     def update_buttons(self):
         self.clear_items()
-        
         start = self.current_page * self.items_per_page
         end = start + self.items_per_page
         page_ids = self.guild_ids[start:end]
 
-        # ปุ่มเลือก Server
         for gid in page_ids:
             guild = self.bot.get_guild(int(gid))
             label = guild.name if guild else f"ID: {gid}"
-            # ตัดชื่อถ้ายาวเกินไป
             if len(label) > 20: label = label[:17] + "..."
             
             btn = discord.ui.Button(label=label, style=discord.ButtonStyle.secondary, custom_id=f"reset_g_{gid}")
             btn.callback = self.create_callback(gid)
             self.add_item(btn)
 
-        # ปุ่มเปลี่ยนหน้า (ถ้ามีมากกว่า 1 หน้า)
         total_pages = (len(self.guild_ids) - 1) // self.items_per_page + 1
         if total_pages > 1:
             if self.current_page > 0:
                 prev_btn = discord.ui.Button(label="⬅️ ก่อนหน้า", style=discord.ButtonStyle.primary, row=4)
                 prev_btn.callback = self.prev_page
                 self.add_item(prev_btn)
-            
             if self.current_page < total_pages - 1:
                 next_btn = discord.ui.Button(label="ถัดไป ➡️", style=discord.ButtonStyle.primary, row=4)
                 next_btn.callback = self.next_page
@@ -361,10 +358,10 @@ class ServerPaginationView(discord.ui.View):
 
     def create_callback(self, guild_id):
         async def callback(interaction: discord.Interaction):
-            view = ResetSelectorView(guild_id, self.bot)
+            view = ResetSystemSelectorView(guild_id, self.bot)
             guild = self.bot.get_guild(int(guild_id))
             g_name = guild.name if guild else guild_id
-            await interaction.response.send_message(f"🗑️ **จัดการข้อมูล: {g_name}**\nเลือกข้อมูลที่ต้องการลบ:", view=view, ephemeral=True)
+            await interaction.response.edit_message(content=f"🗑️ **จัดการข้อมูล: {g_name}**\nเลือกรูปแบบข้อมูลที่ต้องการลบ:", view=view)
         return callback
 
     async def prev_page(self, interaction: discord.Interaction):
@@ -377,70 +374,238 @@ class ServerPaginationView(discord.ui.View):
         self.update_buttons()
         await interaction.response.edit_message(view=self)
 
-class ResetSelectorView(discord.ui.View):
+class ResetSystemSelectorView(discord.ui.View):
     def __init__(self, guild_id, bot):
         super().__init__(timeout=None)
-        self.add_item(ResetSelect(guild_id, bot))
+        self.add_item(ResetSystemSelect(guild_id, bot))
+        
+        # Add Back Button
+        back_btn = discord.ui.Button(label="🔙 กลับไปหน้ารายชื่อ", style=discord.ButtonStyle.secondary, row=4)
+        back_btn.callback = self.back_to_list
+        self.add_item(back_btn)
 
-class ResetSelect(discord.ui.Select):
+    def back_to_list(self, interaction: discord.Interaction):
+        # Cannot easily go back to previous view state without storing it, 
+        # so we recreate pagination view page 0.
+        # Ideally we pass parent view, but for simplicity:
+        pass # To implement back button perfectly, we need to pass data back. 
+        # For now let's just edit message content to say 'Cancelled'.
+        # Or better:
+        async def callback(interaction: discord.Interaction):
+            data = load_data()
+            guild_ids = list(data.get("guilds", {}).keys())
+            view = ServerPaginationView(guild_ids, interaction.client)
+            await interaction.response.edit_message(content="🗑️ **เลือกเซิฟเวอร์ที่ต้องการลบข้อมูล:**", view=view)
+        self.back_to_list = callback
+
+class ResetSystemSelect(discord.ui.Select):
     def __init__(self, guild_id, bot):
-        self.guild_id = guild_id
+        self.guild_id = str(guild_id)
         self.bot = bot
+        
+        data = load_data()
+        
+        # Calculate Counts
+        tk2_count = 0
+        tk2_items = []
+        if "ticket_v2_configs" in data:
+            for mid, conf in data["ticket_v2_configs"].items():
+                # Check guild via channel
+                chan = bot.get_channel(conf["channel_id"])
+                if chan and str(chan.guild.id) == self.guild_id:
+                    tk2_count += 1
+                    tk2_items.append({"id": mid, "name": conf["embed_data"]["title"]})
+                elif not chan: # Channel might be deleted, try to guess or skip? 
+                    # If we can't find channel, we can't verify guild. 
+                    # But if we assume data["guilds"] has it? No.
+                    pass
+
+        gamble_count = 0
+        gamble_items = []
+        if "gamble_configs" in data:
+            for mid, conf in data["gamble_configs"].items():
+                chan_id = conf.get("target_channel")
+                if chan_id:
+                    chan = bot.get_channel(chan_id)
+                    if chan and str(chan.guild.id) == self.guild_id:
+                        gamble_count += 1
+                        gamble_items.append({"id": mid, "name": f"ตู้กาชา (Msg: {mid[-4:]})"})
+
+        auc_count = 0
+        if "active_auctions" in data:
+             for cid, conf in data["active_auctions"].items():
+                 chan = bot.get_channel(int(cid))
+                 if chan and str(chan.guild.id) == self.guild_id:
+                     auc_count += 1
+
         options = [
-            discord.SelectOption(label="ลบทั้งหมด (Delete Guild Data)", value="all", description="ลบข้อมูลทุกอย่างของเซิฟเวอร์นี้ออกจาก Database", emoji="💥"),
+            discord.SelectOption(label=f"Ticket V2 Panels (มี {tk2_count} รายการ)", value="ticket_v2", emoji="🎫", description="เลือกลบแผงตั๋ว V2 แบบเจาะจง"),
+            discord.SelectOption(label=f"Gamble Machines (มี {gamble_count} รายการ)", value="gamble", emoji="🎰", description="เลือกลบตู้กาชาแบบเจาะจง"),
+            # discord.SelectOption(label=f"Active Auctions (มี {auc_count} รายการ)", value="auction", emoji="🔨"), # Auctions usually end quickly, maybe global reset is enough
+            discord.SelectOption(label="ตั้งค่าทั่วไป / รีเซ็ตตัวนับ", value="general", emoji="⚙️", description="รีเซ็ตเลขคิว, ประวัติ, Anti-Raid ฯลฯ"),
+            discord.SelectOption(label="⚠️ ลบข้อมูลเซิฟเวอร์นี้ทั้งหมด", value="all", emoji="💥", description="ลบทุกอย่างออกจาก Database"),
+        ]
+        super().__init__(placeholder="เลือกหมวดหมู่ข้อมูลที่ต้องการลบ...", options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        val = self.values[0]
+        
+        if val == "general":
+            view = ResetGeneralView(self.guild_id)
+            await interaction.response.edit_message(content="⚙️ **เลือกข้อมูลทั่วไปที่ต้องการรีเซ็ต (เลือกได้หลายอัน):**", view=view)
+        
+        elif val == "ticket_v2":
+            # Show list of Ticket V2 panels
+            view = DeleteItemListView(self.guild_id, "ticket_v2", self.bot)
+            if not view.options_available:
+                await interaction.response.send_message("❌ ไม่พบข้อมูล Ticket V2 ในเซิฟเวอร์นี้", ephemeral=True)
+            else:
+                await interaction.response.edit_message(content="🎫 **เลือกแผง Ticket V2 ที่ต้องการลบ:**", view=view)
+
+        elif val == "gamble":
+            view = DeleteItemListView(self.guild_id, "gamble", self.bot)
+            if not view.options_available:
+                await interaction.response.send_message("❌ ไม่พบตู้กาชาในเซิฟเวอร์นี้", ephemeral=True)
+            else:
+                await interaction.response.edit_message(content="🎰 **เลือกตู้กาชาที่ต้องการลบ:**", view=view)
+        
+        elif val == "all":
+            # Confirmation View could be added here
+            data = load_data()
+            if self.guild_id in data["guilds"]:
+                del data["guilds"][self.guild_id]
+                save_data(data)
+                await interaction.response.edit_message(content=f"💥 **ลบข้อมูลทั้งหมดของ Guild ID {self.guild_id} เรียบร้อยแล้ว**", view=None)
+            else:
+                await interaction.response.send_message("❌ ไม่พบข้อมูล", ephemeral=True)
+
+class ResetGeneralView(discord.ui.View):
+    def __init__(self, guild_id):
+        super().__init__(timeout=None)
+        self.add_item(ResetGeneralSelect(guild_id))
+
+class ResetGeneralSelect(discord.ui.Select):
+    def __init__(self, guild_id):
+        self.guild_id = guild_id
+        options = [
             discord.SelectOption(label="รีเซ็ตจำนวนประมูล (Auction Count)", value="auction_count", emoji="🔨"),
             discord.SelectOption(label="รีเซ็ตจำนวนตั๋ว (Ticket Count)", value="ticket_count", emoji="🎫"),
             discord.SelectOption(label="รีเซ็ตลำดับเร่งด่วน (Rush Queue)", value="rush_queue", emoji="🔥"),
-            discord.SelectOption(label="ล้างการตั้งค่าตั๋ว (Ticket Configs)", value="ticket_configs", emoji="⚙️"),
+            discord.SelectOption(label="ล้างการตั้งค่าตั๋วเก่า (Ticket V1 Configs)", value="ticket_configs", emoji="🗑️"),
             discord.SelectOption(label="ล้างสถิติกาชา (Gamble Stats)", value="gamble_stats", emoji="🎰"),
             discord.SelectOption(label="ล้างประวัติรางวัล (Claimed Prizes)", value="claimed_prizes", emoji="🏆"),
-            discord.SelectOption(label="ปิด Anti-Raid", value="antiraid", emoji="🛡️"),
-            discord.SelectOption(label="ยกเลิก Auto Backup", value="autobackup", emoji="💾"),
+            discord.SelectOption(label="ปิด/รีเซ็ต Anti-Raid", value="antiraid", emoji="🛡️"),
+            discord.SelectOption(label="ยกเลิก Auto Backup Channel", value="autobackup", emoji="💾"),
         ]
-        super().__init__(placeholder="เลือกข้อมูลที่ต้องการลบ (เลือกได้หลายอัน)", min_values=1, max_values=len(options), options=options)
+        super().__init__(placeholder="เลือกรายการที่ต้องการรีเซ็ต (เลือกได้หลายข้อ)", min_values=1, max_values=len(options), options=options)
 
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         data = load_data()
-        gid = str(self.guild_id)
         
-        if gid not in data["guilds"]:
-            return await interaction.followup.send("❌ ไม่พบข้อมูลเซิฟเวอร์นี้แล้ว", ephemeral=True)
-
+        if self.guild_id not in data["guilds"]:
+            return await interaction.followup.send("❌ ไม่พบข้อมูลเซิฟเวอร์นี้", ephemeral=True)
+            
+        g_data = data["guilds"][self.guild_id]
         msg = []
-        if "all" in self.values:
-            del data["guilds"][gid]
-            msg.append("💥 ลบข้อมูล Guild ทั้งหมดแล้ว")
-        else:
-            g_data = data["guilds"][gid]
-            for val in self.values:
-                if val == "auction_count":
-                    g_data["auction_count"] = 0
-                    msg.append("✅ รีเซ็ต Auction Count")
-                elif val == "ticket_count":
-                    g_data["ticket_count"] = 0
-                    msg.append("✅ รีเซ็ต Ticket Count")
-                elif val == "rush_queue":
-                    g_data["rush_queue"] = 0
-                    msg.append("✅ รีเซ็ต Rush Queue")
-                elif val == "ticket_configs":
-                    g_data["ticket_configs"] = {}
-                    msg.append("✅ ล้าง Ticket Configs")
-                elif val == "gamble_stats":
-                    g_data["gamble_stats"] = {}
-                    msg.append("✅ ล้าง Gamble Stats")
-                elif val == "claimed_prizes":
-                    g_data["claimed_prizes"] = {}
-                    msg.append("✅ ล้าง Claimed Prizes")
-                elif val == "antiraid":
-                    g_data["antiraid"] = {"status": False, "log_channel": None}
-                    msg.append("✅ ปิดและรีเซ็ต Anti-Raid")
-                elif val == "autobackup":
-                    g_data["autobackup_channel"] = None
-                    msg.append("✅ ยกเลิก Auto Backup")
-
+        
+        for val in self.values:
+            if val == "auction_count":
+                g_data["auction_count"] = 0
+                msg.append("✅ รีเซ็ต Auction Count")
+            elif val == "ticket_count":
+                g_data["ticket_count"] = 0
+                msg.append("✅ รีเซ็ต Ticket Count")
+            elif val == "rush_queue":
+                g_data["rush_queue"] = 0
+                msg.append("✅ รีเซ็ต Rush Queue")
+            elif val == "ticket_configs":
+                g_data["ticket_configs"] = {}
+                msg.append("✅ ล้าง Ticket V1 Configs")
+            elif val == "gamble_stats":
+                g_data["gamble_stats"] = {}
+                msg.append("✅ ล้าง Gamble Stats")
+            elif val == "claimed_prizes":
+                g_data["claimed_prizes"] = {}
+                msg.append("✅ ล้าง Claimed Prizes")
+            elif val == "antiraid":
+                g_data["antiraid"] = {"status": False, "log_channel": None}
+                msg.append("✅ ปิด/รีเซ็ต Anti-Raid")
+            elif val == "autobackup":
+                g_data["autobackup_channel"] = None
+                msg.append("✅ ยกเลิก Auto Backup Channel")
+        
         save_data(data)
         await interaction.followup.send("\n".join(msg), ephemeral=True)
+
+class DeleteItemListView(discord.ui.View):
+    def __init__(self, guild_id, data_type, bot):
+        super().__init__(timeout=None)
+        self.options_available = False
+        
+        select = DeleteItemSelect(guild_id, data_type, bot)
+        if len(select.options) > 0:
+            self.add_item(select)
+            self.options_available = True
+
+class DeleteItemSelect(discord.ui.Select):
+    def __init__(self, guild_id, data_type, bot):
+        self.guild_id = guild_id
+        self.data_type = data_type
+        self.bot = bot
+        
+        data = load_data()
+        options = []
+        
+        if data_type == "ticket_v2":
+            if "ticket_v2_configs" in data:
+                for mid, conf in data["ticket_v2_configs"].items():
+                    chan = bot.get_channel(conf["channel_id"])
+                    if chan and str(chan.guild.id) == str(guild_id):
+                        title = conf["embed_data"].get("title", "No Title")[:50]
+                        options.append(discord.SelectOption(label=f"{title}", value=mid, description=f"Channel: {chan.name}", emoji="🎫"))
+                        if len(options) >= 25: break # Discord Limit
+
+        elif data_type == "gamble":
+            if "gamble_configs" in data:
+                for mid, conf in data["gamble_configs"].items():
+                    chan_id = conf.get("target_channel")
+                    if chan_id:
+                        chan = bot.get_channel(chan_id)
+                        if chan and str(chan.guild.id) == str(guild_id):
+                            label = f"ตู้กาชา ({mid[-4:]})"
+                            options.append(discord.SelectOption(label=label, value=mid, description=f"Channel: {chan.name}", emoji="🎰"))
+                            if len(options) >= 25: break
+
+        if not options:
+            options.append(discord.SelectOption(label="ไม่มีข้อมูล", value="none"))
+        
+        super().__init__(placeholder=f"เลือก {data_type} ที่ต้องการลบ...", min_values=1, max_values=1, options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        val = self.values[0]
+        if val == "none": return
+        
+        await interaction.response.defer(ephemeral=True)
+        data = load_data()
+        
+        if self.data_type == "ticket_v2":
+            if val in data["ticket_v2_configs"]:
+                del data["ticket_v2_configs"][val]
+                save_data(data)
+                await interaction.followup.send(f"✅ ลบแผง Ticket V2 (ID: {val}) เรียบร้อยแล้ว", ephemeral=True)
+                
+        elif self.data_type == "gamble":
+            if val in data["gamble_configs"]:
+                del data["gamble_configs"][val]
+                # Cleanup related data
+                if "gamble_stats" in data and val in data["gamble_stats"]: del data["gamble_stats"][val]
+                if "claimed_prizes" in data and val in data["claimed_prizes"]: del data["claimed_prizes"][val]
+                save_data(data)
+                await interaction.followup.send(f"✅ ลบตู้กาชา (ID: {val}) เรียบร้อยแล้ว", ephemeral=True)
+        
+        # Refresh the view by re-sending? Or just edit
+        # For simplicity, we just notify. User can run command again if needed.
 
 async def setup(bot):
     await bot.add_cog(AdminSystem(bot))
