@@ -22,7 +22,7 @@ class AdminSystem(commands.Cog):
         self.autobackup_task.cancel()
 
     # =========================================
-    # 🔄 AUTO BACKUP LOOP
+    # 🔄 AUTO BACKUP LOOP (Safe Mode 🛡️)
     # =========================================
     @tasks.loop(hours=1)
     async def autobackup_task(self):
@@ -32,6 +32,9 @@ class AdminSystem(commands.Cog):
             data = load_data()
             
             if "guilds" in data:
+                # [SAFETY] นับจำนวนเซิฟที่ต้องส่งเพื่อ Debug
+                count_sent = 0
+                
                 for guild_id_str, guild_data in data["guilds"].items():
                     channel_id = guild_data.get("autobackup_channel")
                     if channel_id:
@@ -55,8 +58,17 @@ class AdminSystem(commands.Cog):
                                 
                                 file = discord.File(DATA_FILE, filename=filename)
                                 await channel.send(content=report_msg, file=file)
+                                count_sent += 1
+                                
+                                # [CRITICAL SAFETY] พัก 2 วินาทีต่อ 1 เซิฟเวอร์ ป้องกัน 429 Too Many Requests
+                                await asyncio.sleep(2) 
+                                
                         except Exception as e:
                             print(f"Auto-backup fail for {guild_id_str}: {e}")
+                
+                if count_sent > 0:
+                    print(f"✅ Auto-Backup sent to {count_sent} guilds.")
+                    
         except Exception as e:
             print(f"Auto-backup loop error: {e}")
 
@@ -68,6 +80,7 @@ class AdminSystem(commands.Cog):
         if not is_owner(interaction):
             return await interaction.response.send_message(MESSAGES["owner_only"], ephemeral=True)
         
+        # Defer ทันทีเพื่อให้เวลาบอทโหลดข้อมูล
         await interaction.response.defer(ephemeral=False)
         view = OwnerPanelView(self.bot, interaction.user.id)
         embed = view.get_status_embed()
@@ -145,24 +158,19 @@ class OwnerPanelView(discord.ui.View):
         embed = discord.Embed(title="🗑️ Reset Data Management", description="⚠️ เลือกเซิฟเวอร์ที่ต้องการ **ลบข้อมูลทั้งหมด**\n(เลือกได้หลายอัน - ลบทันที!)", color=discord.Color.red())
         await interaction.response.edit_message(embed=embed, view=self)
 
-    # [UPDATED] Backup Logic
     async def do_backup_logic(self, interaction: discord.Interaction):
         data = load_data()
         init_guild_data(data, interaction.guild_id)
-        
-        # เช็คว่ามี Auto Backup หรือยัง
         current_channel_id = data["guilds"][str(interaction.guild_id)].get("autobackup_channel")
         
         if not current_channel_id:
-            # ถ้ายังไม่มี ให้เลือกห้องก่อน
             view = AutoBackupSetupView(self.bot)
             await interaction.response.send_message("⚠️ **ยังไม่ได้ตั้งค่า Auto Backup**\nกรุณาเลือกห้องที่จะให้บอทส่งไฟล์ Backup อัตโนมัติทุก 1 ชั่วโมง:", view=view, ephemeral=True)
         else:
-            # ถ้ามีแล้ว ส่งไฟล์ให้เลย
             await self.send_manual_backup(interaction)
 
-    # Helper function to send backup file
     async def send_manual_backup(self, interaction: discord.Interaction):
+        # [SAFETY] Defer ถ้ายังไม่ได้ Defer
         if not interaction.response.is_done():
             await interaction.response.defer(ephemeral=True)
             
@@ -216,8 +224,11 @@ class OwnerPanelView(discord.ui.View):
         embed = self.get_status_embed()
         await interaction.response.edit_message(embed=embed, view=self)
 
-    # --- INFO MODE HELPERS ---
+    # --- INFO MODE HELPERS (API SAFE) ---
     async def update_info_view(self, interaction: discord.Interaction):
+        # [SAFETY] Defer ก่อนเสมอเพราะการ Fetch Invite หลายๆ อันอาจใช้เวลา > 3 วิ
+        await interaction.response.defer()
+        
         self.clear_items()
         guilds = list(self.bot.guilds)
         total_pages = (len(guilds) - 1) // self.items_per_page + 1
@@ -227,7 +238,7 @@ class OwnerPanelView(discord.ui.View):
         self.add_item(b_prev)
 
         b_cancel = discord.ui.Button(label="ยกเลิก (กลับ)", style=discord.ButtonStyle.danger)
-        b_cancel.callback = self.return_to_main
+        b_cancel.callback = self.return_to_main_from_deferred
         self.add_item(b_cancel)
 
         b_next = discord.ui.Button(label="ถัดไป ➡️", style=discord.ButtonStyle.primary, disabled=(self.current_page >= total_pages - 1))
@@ -235,6 +246,14 @@ class OwnerPanelView(discord.ui.View):
         self.add_item(b_next)
 
         embed = await self.get_info_embed()
+        # [SAFETY] ใช้ edit_original_message แทน response.edit_message เพราะเรา defer ไปแล้ว
+        await interaction.edit_original_message(embed=embed, view=self)
+
+    # Helper สำหรับปุ่มที่ Defer ไปแล้ว
+    async def return_to_main_from_deferred(self, interaction: discord.Interaction):
+        # ถ้ากดกลับจากหน้า Info เรา defer มาแล้ว ต้องใช้ edit_original_message
+        self.setup_main_menu()
+        embed = self.get_status_embed()
         await interaction.response.edit_message(embed=embed, view=self)
 
     async def prev_page(self, interaction: discord.Interaction):
@@ -277,11 +296,13 @@ class OwnerPanelView(discord.ui.View):
             join_str = f"<t:{join_ts}:f>" if join_ts else "Unknown"
             
             try:
+                # [SAFETY] Try to get existing invite first to save API calls
                 invites = await g.invites()
                 if invites:
                     link = invites[0].url
                     by = "ลิ้งค์ที่มีอยู่"
                 else:
+                    # Create new only if necessary
                     ch = next((c for c in g.text_channels if c.permissions_for(g.me).create_instant_invite), None)
                     if ch:
                         new = await ch.create_invite(max_age=0, max_uses=0, reason="Owner Panel Info")
@@ -290,7 +311,8 @@ class OwnerPanelView(discord.ui.View):
                     else:
                         link = "#no-perm"
                         by = "ไม่มีสิทธิ์"
-            except:
+            except Exception as e:
+                print(f"Invite Error {g.id}: {e}")
                 link = "#error"
                 by = "Error"
                 
@@ -318,7 +340,6 @@ class AutoBackupSetupView(discord.ui.View):
         
         await interaction.response.send_message(f"✅ **บันทึกการตั้งค่าแล้ว!**\nAuto Backup จะถูกส่งไปที่ <#{channel_id}>\nกำลังส่งไฟล์ Backup ล่าสุดให้ครับ...", ephemeral=True)
         
-        # ส่งไฟล์ Backup ทันทีหลังจากตั้งค่าเสร็จ
         if os.path.exists(DATA_FILE):
             timestamp = datetime.datetime.now().strftime('%d%m%y-%H%M')
             file = discord.File(DATA_FILE, filename=f"manual-backup-{timestamp}.json")
