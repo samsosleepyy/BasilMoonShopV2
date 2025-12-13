@@ -6,6 +6,7 @@ import os
 import datetime
 import asyncio
 import io
+import resource # [NEW] สำหรับเช็ค RAM
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -38,6 +39,8 @@ class AdminSystem(commands.Cog):
                     server_names.append(name)
             
             server_list = ", ".join(server_names) if server_names else "-"
+            
+            # Count Systems
             count_ticket_v1 = len(data.get('active_tickets', {}))
             count_ticket_v2 = len(data.get('active_tickets_v2', {}))
             count_auction = len(data.get('active_auctions', {}))
@@ -46,9 +49,19 @@ class AdminSystem(commands.Cog):
             count_select = len(data.get('select_menus', {}))
             count_points = len(data.get('points', {}))
 
+            # [NEW] Calculate Resource Usage
+            # RAM: ru_maxrss returns KB on Linux (Render is Linux)
+            ram_usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024 # Convert to MB
+            
+            # Disk: Data file size
+            file_size_kb = os.path.getsize(DATA_FILE) / 1024 # Convert to KB
+
             report_msg = (
                 f"📊 **Auto Backup Report**\n"
                 f"⏰ เวลา: <t:{int(datetime.datetime.now().timestamp())}:f>\n\n"
+                f"🖥️ **Resource Usage (Render):**\n"
+                f"• 🧠 RAM Usage: `{ram_usage:.2f} MB` / 512 MB (Free Tier)\n"
+                f"• 💾 Data File Size: `{file_size_kb:.2f} KB`\n\n"
                 f"🏢 **เซิฟเวอร์ที่มีข้อมูล ({len(server_names)}):**\n`{server_list}`\n\n"
                 f"💾 **ระบบที่บันทึก:**\n"
                 f"• 🎫 Ticket V1 (Active): `{count_ticket_v1}` ห้อง\n"
@@ -96,6 +109,9 @@ class AdminSystem(commands.Cog):
         total_guilds = len(guilds)
         total_members = sum(g.member_count for g in guilds)
         
+        # [NEW] เพิ่ม Resource Usage ในหน้า Info ด้วย
+        ram_usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+        
         details = []
         for guild in guilds:
             invite_url = "❌ ไม่พบลิ้งค์"
@@ -118,7 +134,9 @@ class AdminSystem(commands.Cog):
 
         embed = discord.Embed(title="🤖 ข้อมูลบอท (System Info)", color=discord.Color.blue())
         if self.bot.user.avatar: embed.set_thumbnail(url=self.bot.user.avatar.url)
+        
         embed.add_field(name="📊 สถิติภาพรวม", value=f"🏢 จำนวนเซิฟเวอร์: `{total_guilds}`\n👤 สมาชิกทั้งหมด: `{total_members}`", inline=False)
+        embed.add_field(name="🖥️ ทรัพยากรเครื่อง", value=f"🧠 RAM: `{ram_usage:.2f} MB`", inline=False)
         
         server_list_str = "\n\n".join(details)
         if len(server_list_str) > 3800:
@@ -204,7 +222,7 @@ class AdminSystem(commands.Cog):
     # =========================================
     # [UPDATED] RESET DATA COMMAND (Advanced)
     # =========================================
-    @app_commands.command(name="resetdata", description="เลือกลบข้อมูล")
+    @app_commands.command(name="resetdata", description="เลือกลบข้อมูลของเซิฟเวอร์ต่างๆ")
     async def resetdata(self, interaction: discord.Interaction):
         if not is_owner(interaction):
              return await interaction.response.send_message(MESSAGES["owner_only"], ephemeral=True)
@@ -219,7 +237,7 @@ class AdminSystem(commands.Cog):
         view = ServerPaginationView(guild_ids, self.bot)
         await interaction.followup.send("🗑️ **เลือกเซิฟเวอร์ที่ต้องการลบข้อมูล:**", view=view)
 
-    # ... (Command อื่นๆ คงเดิม) ...
+    # ... (Command อื่นๆ คงเดิม: anti-raid, addadmin, etc.) ...
     @app_commands.command(name="anti-raid", description=MESSAGES["desc_antiraid"])
     async def antiraid(self, interaction: discord.Interaction, status: bool, log_channel: discord.TextChannel):
         await interaction.response.defer(ephemeral=True)
@@ -398,7 +416,6 @@ class ResetSystemSelect(discord.ui.Select):
                 if chan and str(chan.guild.id) == self.guild_id:
                     tk2_count += 1
                 elif not chan:
-                    # ถ้าหาห้องไม่เจอ แต่ข้อมูลอาจยังอยู่ (ถ้าแน่ใจว่าลบได้ก็ลบ)
                     pass
 
         gamble_count = 0
