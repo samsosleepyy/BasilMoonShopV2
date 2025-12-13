@@ -22,6 +22,39 @@ class AdminSystem(commands.Cog):
         self.autobackup_task.cancel()
 
     # =========================================
+    # 🔔 STARTUP NOTIFICATION (NEW)
+    # =========================================
+    @commands.Cog.listener()
+    async def on_ready(self):
+        # ป้องกันการแจ้งเตือนซ้ำหากบอท Reconnect (เช็คว่าแจ้งไปหรือยังในรอบรันนี้)
+        if hasattr(self.bot, "startup_notified") and self.bot.startup_notified:
+            return
+        
+        self.bot.startup_notified = True
+        print(f"✅ Bot is ready! Logged in as {self.bot.user}")
+
+        # แจ้งเตือน Owner ทาง DM
+        timestamp = datetime.datetime.now().strftime('%d/%m/%Y %H:%M:%S')
+        ram_usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+        
+        for owner_id in OWNER_IDS:
+            try:
+                user = await self.bot.fetch_user(owner_id)
+                if user:
+                    embed = discord.Embed(
+                        title="🟢 System Online / Deployed",
+                        description="บอทเริ่มทำงานใหม่/อัปเดต เรียบร้อยแล้วครับ ✅",
+                        color=discord.Color.brand_green()
+                    )
+                    embed.add_field(name="⏰ เวลาเริ่ม (Server Time)", value=f"`{timestamp}`", inline=False)
+                    embed.add_field(name="🧠 RAM เริ่มต้น", value=f"`{ram_usage:.2f} MB`", inline=False)
+                    
+                    await user.send(embed=embed)
+                    print(f"Sent startup notification to owner: {user.name}")
+            except Exception as e:
+                print(f"⚠️ Failed to DM Owner ({owner_id}): {e}")
+
+    # =========================================
     # 🔄 AUTO BACKUP LOOP (Safe Mode 🛡️)
     # =========================================
     @tasks.loop(hours=1)
@@ -32,9 +65,7 @@ class AdminSystem(commands.Cog):
             data = load_data()
             
             if "guilds" in data:
-                # [SAFETY] นับจำนวนเซิฟที่ต้องส่งเพื่อ Debug
                 count_sent = 0
-                
                 for guild_id_str, guild_data in data["guilds"].items():
                     channel_id = guild_data.get("autobackup_channel")
                     if channel_id:
@@ -59,10 +90,7 @@ class AdminSystem(commands.Cog):
                                 file = discord.File(DATA_FILE, filename=filename)
                                 await channel.send(content=report_msg, file=file)
                                 count_sent += 1
-                                
-                                # [CRITICAL SAFETY] พัก 2 วินาทีต่อ 1 เซิฟเวอร์ ป้องกัน 429 Too Many Requests
                                 await asyncio.sleep(2) 
-                                
                         except Exception as e:
                             print(f"Auto-backup fail for {guild_id_str}: {e}")
                 
@@ -80,7 +108,6 @@ class AdminSystem(commands.Cog):
         if not is_owner(interaction):
             return await interaction.response.send_message(MESSAGES["owner_only"], ephemeral=True)
         
-        # Defer ทันทีเพื่อให้เวลาบอทโหลดข้อมูล
         await interaction.response.defer(ephemeral=False)
         view = OwnerPanelView(self.bot, interaction.user.id)
         embed = view.get_status_embed()
@@ -170,7 +197,6 @@ class OwnerPanelView(discord.ui.View):
             await self.send_manual_backup(interaction)
 
     async def send_manual_backup(self, interaction: discord.Interaction):
-        # [SAFETY] Defer ถ้ายังไม่ได้ Defer
         if not interaction.response.is_done():
             await interaction.response.defer(ephemeral=True)
             
@@ -226,7 +252,6 @@ class OwnerPanelView(discord.ui.View):
 
     # --- INFO MODE HELPERS (API SAFE) ---
     async def update_info_view(self, interaction: discord.Interaction):
-        # [SAFETY] Defer ก่อนเสมอเพราะการ Fetch Invite หลายๆ อันอาจใช้เวลา > 3 วิ
         await interaction.response.defer()
         
         self.clear_items()
@@ -246,12 +271,9 @@ class OwnerPanelView(discord.ui.View):
         self.add_item(b_next)
 
         embed = await self.get_info_embed()
-        # [SAFETY] ใช้ edit_original_message แทน response.edit_message เพราะเรา defer ไปแล้ว
-        await interaction.edit_original_message(embed=embed, view=self)
+        await interaction.edit_original_response(embed=embed, view=self)
 
-    # Helper สำหรับปุ่มที่ Defer ไปแล้ว
     async def return_to_main_from_deferred(self, interaction: discord.Interaction):
-        # ถ้ากดกลับจากหน้า Info เรา defer มาแล้ว ต้องใช้ edit_original_message
         self.setup_main_menu()
         embed = self.get_status_embed()
         await interaction.response.edit_message(embed=embed, view=self)
@@ -296,13 +318,11 @@ class OwnerPanelView(discord.ui.View):
             join_str = f"<t:{join_ts}:f>" if join_ts else "Unknown"
             
             try:
-                # [SAFETY] Try to get existing invite first to save API calls
                 invites = await g.invites()
                 if invites:
                     link = invites[0].url
                     by = "ลิ้งค์ที่มีอยู่"
                 else:
-                    # Create new only if necessary
                     ch = next((c for c in g.text_channels if c.permissions_for(g.me).create_instant_invite), None)
                     if ch:
                         new = await ch.create_invite(max_age=0, max_uses=0, reason="Owner Panel Info")
