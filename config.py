@@ -271,16 +271,19 @@ MESSAGES = {
     "ar_val_webhook": "**ชื่อ:** {name}\n**ID:** `{id}`",
 }
 
+
 # =========================================
 # DATA MANAGEMENT
 # =========================================
 def load_data():
     default_structure = {
-        "admins": [], "supports": [], "auction_count": 0, "ticket_count": 0,
+        "auction_count": 0, "ticket_count": 0,
         "ticket_configs": {}, "lockdown_time": 0, "points": {}, 
         "claimed_prizes": {}, "gamble_configs": {}, "gamble_stats": {}, "guilds": {},
         "select_menus": {},
-        "whitelisted_guilds": [] 
+        "whitelisted_guilds": [],
+        "active_tickets": {}, "active_tickets_v2": {}, "active_auctions": {},
+        "queue_views": {}
     }
 
     if not os.path.exists(DATA_FILE):
@@ -310,28 +313,55 @@ def init_guild_data(data, guild_id):
     if "guilds" not in data: data["guilds"] = {}
     if str_id not in data["guilds"]:
         data["guilds"][str_id] = {
+            "admins": [], # [UPDATED] Local Admins
+            "supports": [], # [UPDATED] Local Supports
             "auction_count": 0, "ticket_count": 0, "ticket_configs": {},
             "lockdown_time": 0, "claimed_prizes": {}, "gamble_configs": {},
             "gamble_stats": {}, "antiraid": {"status": False, "log_channel": None},
             "autobackup_channel": None,
-            "rush_queue": 0 # [NEW] Added for Ticket V2
+            "rush_queue": 0
         }
+    
+    # Check for older schema
+    if "admins" not in data["guilds"][str_id]: data["guilds"][str_id]["admins"] = []
+    if "supports" not in data["guilds"][str_id]: data["guilds"][str_id]["supports"] = []
+    
     return data
 
+# [UPDATED] Permission Checker (Per-Guild)
 def is_admin_or_has_permission(interaction):
+    if is_owner(interaction): return True
+    if interaction.user.guild_permissions.administrator: return True
+    
     data = load_data()
+    guild_id = str(interaction.guild_id)
+    
+    # Check Whitelist
+    if guild_id not in data.get("whitelisted_guilds", []): return False
+
+    init_guild_data(data, guild_id)
+    guild_data = data["guilds"][guild_id]
+    
     user_id = interaction.user.id
     user_roles = [r.id for r in interaction.user.roles]
-    if user_id in data["admins"] or any(r in data["admins"] for r in user_roles): return True
-    if interaction.user.guild_permissions.administrator: return True
+    
+    if user_id in guild_data["admins"] or any(r in guild_data["admins"] for r in user_roles): return True
     return False
 
+# [UPDATED] Permission Checker (Per-Guild)
 def is_support_or_admin(interaction):
     if is_admin_or_has_permission(interaction): return True
+    
     data = load_data()
+    guild_id = str(interaction.guild_id)
+    
+    init_guild_data(data, guild_id)
+    guild_data = data["guilds"][guild_id]
+    
     user_id = interaction.user.id
     user_roles = [r.id for r in interaction.user.roles]
-    if user_id in data["supports"] or any(r in data["supports"] for r in user_roles): return True
+    
+    if user_id in guild_data["supports"] or any(r in guild_data["supports"] for r in user_roles): return True
     return False
 
 async def get_files_from_urls(urls):
