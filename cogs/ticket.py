@@ -126,7 +126,6 @@ class TicketPanelControlView(discord.ui.View):
             config = data["guilds"][self.guild_id]["ticket_configs"].get(self.forum_id, {})
             status = config.get("status", True)
             
-            # ปุ่ม Toggle Status
             btn_toggle = [x for x in self.children if x.custom_id == "tf_panel_toggle"][0]
             if status:
                 btn_toggle.label = "ปิดระบบ 🔴"
@@ -136,7 +135,6 @@ class TicketPanelControlView(discord.ui.View):
                 btn_toggle.style = discord.ButtonStyle.success
         except: pass
 
-    # Row 0: Basic Settings
     @discord.ui.button(label="Loading...", style=discord.ButtonStyle.secondary, custom_id="tf_panel_toggle", row=0)
     async def toggle_status(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not is_admin_or_has_permission(interaction): 
@@ -152,7 +150,6 @@ class TicketPanelControlView(discord.ui.View):
         config["status"] = new_status
         save_data(data)
         
-        # Bulk Permission Update
         try:
             forum_channel = interaction.guild.get_channel(int(self.forum_id))
             if forum_channel:
@@ -174,7 +171,6 @@ class TicketPanelControlView(discord.ui.View):
         except Exception as e:
             print(f"Failed to update permissions: {e}")
         
-        # [FIX] เรียก update_buttons เพื่อแก้ label ปุ่มจาก Loading กลับเป็นสถานะจริง
         self.update_buttons()
         
         embed = interaction.message.embeds[0]
@@ -199,7 +195,6 @@ class TicketPanelControlView(discord.ui.View):
         view = ChannelSelectorView(self.guild_id, self.forum_id, "forum")
         await interaction.response.send_message("🔻 **เลือกช่องฟอรั่มใหม่ (Forum):**", view=view, ephemeral=True)
 
-    # Row 1: Advanced Settings
     @discord.ui.button(label="เปลี่ยนช่อง Log 📜", style=discord.ButtonStyle.secondary, custom_id="tf_panel_log", row=1)
     async def change_log(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not is_admin_or_has_permission(interaction): return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
@@ -352,7 +347,6 @@ class TicketForumView(discord.ui.View):
         chan_name = f"ID-{count}"
         ticket_chan = await interaction.guild.create_text_channel(chan_name, category=category, overwrites=overwrites)
         
-        # [UPDATED] เพิ่มคำอธิบายปุ่มกลางแอดมิน
         msg_content = MESSAGES["tf_room_created"].format(buyer=interaction.user.mention, seller=interaction.channel.owner.mention)
         msg_content += "\n\n💡 **ปุ่มคนกลาง (Middleman):** หากต้องการให้ Admin เข้ามาช่วยดูแล กดปุ่มระฆัง 🔔 ด้านล่างครับ"
         
@@ -431,12 +425,15 @@ class TicketControlView(discord.ui.View):
         
         # ค้นหา Admin & Support ที่ตั้งค่าไว้
         pings = []
-        for admin_id in data["guilds"][guild_id]["admins"]:
-            if interaction.guild.get_role(admin_id): pings.append(f"<@&{admin_id}>")
-            else: pings.append(f"<@{admin_id}>")
-        for sup_id in data["guilds"][guild_id]["supports"]:
-            if interaction.guild.get_role(sup_id): pings.append(f"<@&{sup_id}>")
-            else: pings.append(f"<@{sup_id}>")
+        target_ids = set(data["guilds"][guild_id]["admins"] + data["guilds"][guild_id]["supports"])
+        
+        for target_id in target_ids:
+            role = interaction.guild.get_channel(target_id) # Mistake here: get_channel is wrong for ID, checking Role
+            role = interaction.guild.get_role(target_id)
+            if role:
+                pings.append(role.mention)
+            else:
+                pings.append(f"<@{target_id}>")
         
         note = ""
         # Fallback: ถ้าไม่มีการตั้งค่าไว้เลย ให้หาคนที่มีสิทธิ์ Administrator
@@ -462,9 +459,17 @@ class TicketControlView(discord.ui.View):
         data = load_data()
         guild_id = str(interaction.guild_id)
         init_guild_data(data, guild_id)
-        supports = data["guilds"][guild_id]["supports"]
         
-        for sid in supports: msg += f" <@{sid}>"
+        # [FIXED] Combine Admin & Support Logic properly
+        target_ids = set(data["guilds"][guild_id]["admins"] + data["guilds"][guild_id]["supports"])
+        pings = []
+        for tid in target_ids:
+            role = interaction.guild.get_role(tid)
+            if role: pings.append(role.mention)
+            else: pings.append(f"<@{tid}>")
+            
+        msg += " " + " ".join(pings)
+        
         await interaction.channel.send(msg)
         await interaction.channel.send(MESSAGES["tf_admin_panel_msg"], view=AdminCloseView(self.forum_thread_id, self.log_id, self.buyer_id, self.seller_id, self.count))
         await interaction.response.defer()
