@@ -98,9 +98,6 @@ class TicketSystem(commands.Cog):
         
         await interaction.followup.send(f"✅ สร้าง Panel เรียบร้อยแล้วที่ {panel_channel.mention}", ephemeral=True)
 
-    # ---------------------------------------------------------
-    # 🛒 เมื่อมีโพสต์ใหม่ (ถ้าปิดระบบ Permission จะกันไว้เอง แต่ถ้าหลุดมาก็ส่งปุ่มปกติ)
-    # ---------------------------------------------------------
     @commands.Cog.listener()
     async def on_thread_create(self, thread):
         data = load_data()
@@ -129,6 +126,7 @@ class TicketPanelControlView(discord.ui.View):
             config = data["guilds"][self.guild_id]["ticket_configs"].get(self.forum_id, {})
             status = config.get("status", True)
             
+            # ปุ่ม Toggle Status
             btn_toggle = [x for x in self.children if x.custom_id == "tf_panel_toggle"][0]
             if status:
                 btn_toggle.label = "ปิดระบบ 🔴"
@@ -138,6 +136,7 @@ class TicketPanelControlView(discord.ui.View):
                 btn_toggle.style = discord.ButtonStyle.success
         except: pass
 
+    # Row 0: Basic Settings
     @discord.ui.button(label="Loading...", style=discord.ButtonStyle.secondary, custom_id="tf_panel_toggle", row=0)
     async def toggle_status(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not is_admin_or_has_permission(interaction): 
@@ -153,40 +152,29 @@ class TicketPanelControlView(discord.ui.View):
         config["status"] = new_status
         save_data(data)
         
-        # [UPDATED] Bulk Permission Update (ทุก Role ยกเว้น Admin)
+        # Bulk Permission Update
         try:
             forum_channel = interaction.guild.get_channel(int(self.forum_id))
             if forum_channel:
-                # ดึง Overwrite เดิมมาแก้ เพื่อไม่ให้ทับการตั้งค่าอื่น
                 current_overwrites = forum_channel.overwrites
                 new_overwrites = current_overwrites.copy()
                 
-                # วนลูปทุก Role ในเซิฟเวอร์
                 for role in interaction.guild.roles:
-                    # ข้ามถ้าเป็น Admin (เพื่อให้ Admin ยังโพสต์ได้)
-                    if role.permissions.administrator:
-                        continue
+                    if role.permissions.administrator: continue
                         
-                    # สร้าง/ดึง Overwrite ของ Role นั้น
                     overwrite = new_overwrites.get(role, discord.PermissionOverwrite())
-                    
-                    if new_status: # เปิด -> ให้ส่งข้อความได้ (None = Default/Inherit)
+                    if new_status: 
                         overwrite.send_messages = None
-                        # ถ้าเป็น @everyone และค่าเดิมคือ False ให้แก้เป็น None
-                        if role == interaction.guild.default_role:
-                             overwrite.send_messages = None
-                    else: # ปิด -> ห้ามส่งข้อความ
+                        if role == interaction.guild.default_role: overwrite.send_messages = None
+                    else: 
                         overwrite.send_messages = False
-                    
-                    # อัปเดตใน Dictionary
                     new_overwrites[role] = overwrite
                 
-                # สั่งแก้ทีเดียว (1 API Request)
                 await forum_channel.edit(overwrites=new_overwrites)
-                
         except Exception as e:
             print(f"Failed to update permissions: {e}")
         
+        # [FIX] เรียก update_buttons เพื่อแก้ label ปุ่มจาก Loading กลับเป็นสถานะจริง
         self.update_buttons()
         
         embed = interaction.message.embeds[0]
@@ -211,6 +199,23 @@ class TicketPanelControlView(discord.ui.View):
         view = ChannelSelectorView(self.guild_id, self.forum_id, "forum")
         await interaction.response.send_message("🔻 **เลือกช่องฟอรั่มใหม่ (Forum):**", view=view, ephemeral=True)
 
+    # Row 1: Advanced Settings
+    @discord.ui.button(label="เปลี่ยนช่อง Log 📜", style=discord.ButtonStyle.secondary, custom_id="tf_panel_log", row=1)
+    async def change_log(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not is_admin_or_has_permission(interaction): return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
+        view = ChannelSelectorView(self.guild_id, self.forum_id, "log")
+        await interaction.response.send_message("🔻 **เลือกช่อง Log ใหม่:**", view=view, ephemeral=True)
+
+    @discord.ui.button(label="รีเซ็ตเลข ID 🔄", style=discord.ButtonStyle.danger, custom_id="tf_panel_reset", row=1)
+    async def reset_count(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not is_admin_or_has_permission(interaction): return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
+        
+        data = load_data()
+        data["guilds"][self.guild_id]["ticket_count"] = 0
+        save_data(data)
+        
+        await interaction.response.send_message("✅ **รีเซ็ตตัวนับ Ticket ID เป็น 0 เรียบร้อยแล้ว**", ephemeral=True)
+
 class ChannelSelectorView(discord.ui.View):
     def __init__(self, guild_id, forum_id, mode):
         super().__init__(timeout=60)
@@ -218,6 +223,8 @@ class ChannelSelectorView(discord.ui.View):
             self.add_item(CategorySelect(guild_id, forum_id))
         elif mode == "forum":
             self.add_item(ForumSelect(guild_id, forum_id))
+        elif mode == "log":
+            self.add_item(LogSelect(guild_id, forum_id))
 
 class CategorySelect(discord.ui.ChannelSelect):
     def __init__(self, guild_id, forum_id):
@@ -227,31 +234,27 @@ class CategorySelect(discord.ui.ChannelSelect):
 
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        
         cat_id = self.values[0].id
         data = load_data()
-        
         if self.tg_forum_id in data["guilds"][self.tg_guild_id]["ticket_configs"]:
             data["guilds"][self.tg_guild_id]["ticket_configs"][self.tg_forum_id]["category_id"] = cat_id
             save_data(data)
-            
-            try:
-                conf = data["guilds"][self.tg_guild_id]["ticket_configs"][self.tg_forum_id]
-                channel = interaction.guild.get_channel(conf["panel_channel_id"])
-                msg = await channel.fetch_message(conf["panel_msg_id"])
-                
-                embed = msg.embeds[0]
-                for i, field in enumerate(embed.fields):
-                    if "หมวดหมู่" in field.name:
-                        embed.set_field_at(i, name=field.name, value=self.values[0].mention, inline=False)
-                        break
-                
-                await msg.edit(embed=embed)
-                await interaction.followup.send(f"✅ เปลี่ยนหมวดหมู่เป็น {self.values[0].mention} เรียบร้อย", ephemeral=True)
-            except Exception as e:
-                await interaction.followup.send(f"⚠️ บันทึกข้อมูลแล้ว แต่ไม่สามารถอัปเดตหน้า Panel ได้ ({e})", ephemeral=True)
+            await self.update_panel(interaction, "หมวดหมู่", self.values[0].mention)
         else:
-            await interaction.followup.send("❌ ไม่พบข้อมูล Config เดิม", ephemeral=True)
+            await interaction.followup.send("❌ ไม่พบข้อมูล", ephemeral=True)
+
+    async def update_panel(self, interaction, field_name, value):
+        data = load_data()
+        conf = data["guilds"][self.tg_guild_id]["ticket_configs"][self.tg_forum_id]
+        channel = interaction.guild.get_channel(conf["panel_channel_id"])
+        msg = await channel.fetch_message(conf["panel_msg_id"])
+        embed = msg.embeds[0]
+        for i, field in enumerate(embed.fields):
+            if field_name in field.name:
+                embed.set_field_at(i, name=field.name, value=value, inline=False)
+                break
+        await msg.edit(embed=embed)
+        await interaction.followup.send(f"✅ อัปเดต {field_name} เรียบร้อย", ephemeral=True)
 
 class ForumSelect(discord.ui.ChannelSelect):
     def __init__(self, guild_id, forum_id):
@@ -261,7 +264,6 @@ class ForumSelect(discord.ui.ChannelSelect):
 
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        
         new_forum_id = str(self.values[0].id)
         data = load_data()
         guild_data = data["guilds"][self.tg_guild_id]
@@ -271,25 +273,49 @@ class ForumSelect(discord.ui.ChannelSelect):
             guild_data["ticket_configs"][new_forum_id] = config
             save_data(data)
             
-            try:
-                channel = interaction.guild.get_channel(config["panel_channel_id"])
-                msg = await channel.fetch_message(config["panel_msg_id"])
-                
-                embed = msg.embeds[0]
-                for i, field in enumerate(embed.fields):
-                    if "ฟอรั่ม" in field.name:
-                        embed.set_field_at(i, name=field.name, value=self.values[0].mention, inline=False)
-                        break
-                embed.set_footer(text=f"Forum ID: {new_forum_id}")
-                
-                new_view = TicketPanelControlView(self.tg_guild_id, new_forum_id)
-                await msg.edit(embed=embed, view=new_view)
-                
-                await interaction.followup.send(f"✅ เปลี่ยนฟอรั่มเป็น {self.values[0].mention} เรียบร้อย", ephemeral=True)
-            except Exception as e:
-                await interaction.followup.send(f"⚠️ บันทึกข้อมูลแล้ว แต่เกิดข้อผิดพลาดในการอัปเดต Panel ({e})", ephemeral=True)
+            # Update Panel
+            channel = interaction.guild.get_channel(config["panel_channel_id"])
+            msg = await channel.fetch_message(config["panel_msg_id"])
+            embed = msg.embeds[0]
+            for i, field in enumerate(embed.fields):
+                if "ฟอรั่ม" in field.name:
+                    embed.set_field_at(i, name=field.name, value=self.values[0].mention, inline=False)
+                    break
+            embed.set_footer(text=f"Forum ID: {new_forum_id}")
+            
+            new_view = TicketPanelControlView(self.tg_guild_id, new_forum_id)
+            await msg.edit(embed=embed, view=new_view)
+            await interaction.followup.send(f"✅ เปลี่ยนฟอรั่มเรียบร้อย", ephemeral=True)
         else:
-            await interaction.followup.send("❌ ไม่พบข้อมูล Config เดิม", ephemeral=True)
+            await interaction.followup.send("❌ ไม่พบข้อมูล", ephemeral=True)
+
+class LogSelect(discord.ui.ChannelSelect):
+    def __init__(self, guild_id, forum_id):
+        super().__init__(channel_types=[discord.ChannelType.text], placeholder="เลือกช่อง Log ใหม่...")
+        self.tg_guild_id = guild_id
+        self.tg_forum_id = forum_id
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        log_id = self.values[0].id
+        data = load_data()
+        if self.tg_forum_id in data["guilds"][self.tg_guild_id]["ticket_configs"]:
+            data["guilds"][self.tg_guild_id]["ticket_configs"][self.tg_forum_id]["log_id"] = log_id
+            save_data(data)
+            
+            # Update Panel
+            conf = data["guilds"][self.tg_guild_id]["ticket_configs"][self.tg_forum_id]
+            channel = interaction.guild.get_channel(conf["panel_channel_id"])
+            msg = await channel.fetch_message(conf["panel_msg_id"])
+            embed = msg.embeds[0]
+            for i, field in enumerate(embed.fields):
+                if "ช่อง Log" in field.name:
+                    embed.set_field_at(i, name=field.name, value=self.values[0].mention, inline=False)
+                    break
+            await msg.edit(embed=embed)
+            await interaction.followup.send(f"✅ เปลี่ยนช่อง Log เรียบร้อย", ephemeral=True)
+        else:
+            await interaction.followup.send("❌ ไม่พบข้อมูล", ephemeral=True)
 
 class TicketForumView(discord.ui.View):
     def __init__(self):
@@ -326,10 +352,12 @@ class TicketForumView(discord.ui.View):
         chan_name = f"ID-{count}"
         ticket_chan = await interaction.guild.create_text_channel(chan_name, category=category, overwrites=overwrites)
         
-        msg = MESSAGES["tf_room_created"].format(buyer=interaction.user.mention, seller=interaction.channel.owner.mention)
+        # [UPDATED] เพิ่มคำอธิบายปุ่มกลางแอดมิน
+        msg_content = MESSAGES["tf_room_created"].format(buyer=interaction.user.mention, seller=interaction.channel.owner.mention)
+        msg_content += "\n\n💡 **ปุ่มคนกลาง (Middleman):** หากต้องการให้ Admin เข้ามาช่วยดูแล กดปุ่มระฆัง 🔔 ด้านล่างครับ"
         
         view = TicketControlView(interaction.channel.id, conf["log_id"], interaction.user.id, interaction.channel.owner_id, interaction.message.id, count)
-        await ticket_chan.send(msg, view=view)
+        await ticket_chan.send(msg_content, view=view)
 
         if "active_tickets" not in data: data["active_tickets"] = {}
         data["active_tickets"][str(ticket_chan.id)] = {
@@ -392,12 +420,46 @@ class TicketControlView(discord.ui.View):
         self.forum_msg_id = forum_msg_id
         self.count = count
 
-    @discord.ui.button(label=MESSAGES["tf_btn_finish"], style=discord.ButtonStyle.green)
+    # [NEW] ปุ่มเรียกแอดมิน (คนกลาง)
+    @discord.ui.button(label="เรียกแอดมิน (คนกลาง) 🔔", style=discord.ButtonStyle.blurple, row=0)
+    async def call_admin(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        
+        data = load_data()
+        guild_id = str(interaction.guild_id)
+        init_guild_data(data, guild_id)
+        
+        # ค้นหา Admin & Support ที่ตั้งค่าไว้
+        pings = []
+        for admin_id in data["guilds"][guild_id]["admins"]:
+            if interaction.guild.get_role(admin_id): pings.append(f"<@&{admin_id}>")
+            else: pings.append(f"<@{admin_id}>")
+        for sup_id in data["guilds"][guild_id]["supports"]:
+            if interaction.guild.get_role(sup_id): pings.append(f"<@&{sup_id}>")
+            else: pings.append(f"<@{sup_id}>")
+        
+        note = ""
+        # Fallback: ถ้าไม่มีการตั้งค่าไว้เลย ให้หาคนที่มีสิทธิ์ Administrator
+        if not pings:
+            for member in interaction.guild.members:
+                if not member.bot and member.guild_permissions.administrator:
+                    pings.append(member.mention)
+            note = "\n-# เนื่องจากไม่ได้มีการตั้งค่า admin และ supportadmin ไว้ ระบบจึงเรียกผู้ที่มีสิทธิ์ Administrator แทน"
+        
+        ping_msg = " ".join(pings) if pings else "@here"
+        
+        await interaction.channel.send(f"🔔 **มีผู้เรียกคนกลาง/แอดมิน!** {ping_msg}{note}")
+        
+        # ปิดปุ่มหลังจากกดแล้ว
+        button.disabled = True
+        button.label = "เรียกแอดมินแล้ว ✅"
+        await interaction.edit_original_response(view=self)
+
+    @discord.ui.button(label=MESSAGES["tf_btn_finish"], style=discord.ButtonStyle.green, row=0)
     async def finish(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.seller_id: return await interaction.response.send_message(MESSAGES["tf_only_seller"], ephemeral=True)
         msg = MESSAGES["tf_wait_admin"]
         data = load_data()
-        
         guild_id = str(interaction.guild_id)
         init_guild_data(data, guild_id)
         supports = data["guilds"][guild_id]["supports"]
@@ -407,7 +469,7 @@ class TicketControlView(discord.ui.View):
         await interaction.channel.send(MESSAGES["tf_admin_panel_msg"], view=AdminCloseView(self.forum_thread_id, self.log_id, self.buyer_id, self.seller_id, self.count))
         await interaction.response.defer()
 
-    @discord.ui.button(label=MESSAGES["tf_btn_cancel"], style=discord.ButtonStyle.red)
+    @discord.ui.button(label=MESSAGES["tf_btn_cancel"], style=discord.ButtonStyle.red, row=0)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.seller_id: return await interaction.response.send_message(MESSAGES["tf_only_seller"], ephemeral=True)
         await interaction.response.send_modal(TicketCancelModal(self.log_id, self.buyer_id, self.seller_id, self.forum_thread_id, self.forum_msg_id, self.count))
