@@ -241,7 +241,6 @@ class AuctionSystem(commands.Cog):
         if custom_end_timestamp:
             timestamp = custom_end_timestamp
         else:
-            # ใช้ 24 ชม. เป็นค่าเริ่มต้นสำหรับการแสดงผล (ถ้ายังไม่เริ่ม)
             duration = auction_data.get('duration_minutes', 1440) 
             end_time = datetime.datetime.now() + datetime.timedelta(minutes=duration)
             timestamp = int(end_time.timestamp())
@@ -358,7 +357,6 @@ class AuctionModalStep2(discord.ui.Modal, title=MESSAGES["auc_step2_title"]):
         
         self.download_link = discord.ui.TextInput(label=MESSAGES["auc_lbl_link"], placeholder=MESSAGES["auc_ph_link"], required=True, default=d_link)
         self.rights = discord.ui.TextInput(label=MESSAGES["auc_lbl_rights"], placeholder=MESSAGES["auc_ph_rights"], required=True, default=d_rights)
-        # [UPDATED] บังคับกรอก + Placeholder
         self.extra_info = discord.ui.TextInput(label=MESSAGES["auc_lbl_extra"], placeholder="อธิบายสินค้าหรือกฎ", required=True, style=discord.TextStyle.paragraph, default=d_extra)
         
         self.add_item(self.download_link); self.add_item(self.rights); self.add_item(self.extra_info)
@@ -373,10 +371,16 @@ class AuctionModalStep2(discord.ui.Modal, title=MESSAGES["auc_step2_title"]):
             await self.cog.send_user_preview(interaction.channel, self.auction_data, self.preview_msg)
         else:
             data = load_data()
+            # [FIXED] Init guild data to prevent KeyError 'admins'
+            init_guild_data(data, interaction.guild_id)
+            
             overwrites = {interaction.guild.default_role: discord.PermissionOverwrite(read_messages=False),interaction.user: discord.PermissionOverwrite(read_messages=True),interaction.guild.me: discord.PermissionOverwrite(read_messages=True)}
-            for admin_id in data["guilds"][str(interaction.guild_id)]["admins"]: 
-                member = interaction.guild.get_member(admin_id)
-                if member: overwrites[member] = discord.PermissionOverwrite(read_messages=True)
+            
+            if "admins" in data["guilds"][str(interaction.guild_id)]:
+                for admin_id in data["guilds"][str(interaction.guild_id)]["admins"]: 
+                    member = interaction.guild.get_member(admin_id)
+                    if member: overwrites[member] = discord.PermissionOverwrite(read_messages=True)
+            
             channel = await interaction.guild.create_text_channel(f"✧꒰ส่งรูปสินค้า📦-{interaction.user.name}꒱", overwrites=overwrites)
             await interaction.response.send_message(MESSAGES["auc_created_channel"].format(channel=channel.mention), ephemeral=True)
             self.cog.bot.loop.create_task(self.cog.wait_for_images(channel, interaction.user, self.auction_data))
@@ -506,7 +510,6 @@ class AuctionControlView(discord.ui.View):
         view = AuctionEditView(msg_id)
         await interaction.response.send_message("⚙️ **เมนูแก้ไขการประมูล**", view=view, ephemeral=True)
 
-    # [NEW] ปุ่มรายงาน
     @discord.ui.button(label="รายงาน", style=discord.ButtonStyle.red, emoji="🚨", custom_id="auc_report")
     async def report(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id == self.seller_id:
