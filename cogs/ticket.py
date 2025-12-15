@@ -268,7 +268,6 @@ class ForumSelect(discord.ui.ChannelSelect):
             guild_data["ticket_configs"][new_forum_id] = config
             save_data(data)
             
-            # Update Panel
             channel = interaction.guild.get_channel(config["panel_channel_id"])
             msg = await channel.fetch_message(config["panel_msg_id"])
             embed = msg.embeds[0]
@@ -298,7 +297,6 @@ class LogSelect(discord.ui.ChannelSelect):
             data["guilds"][self.tg_guild_id]["ticket_configs"][self.tg_forum_id]["log_id"] = log_id
             save_data(data)
             
-            # Update Panel
             conf = data["guilds"][self.tg_guild_id]["ticket_configs"][self.tg_forum_id]
             channel = interaction.guild.get_channel(conf["panel_channel_id"])
             msg = await channel.fetch_message(conf["panel_msg_id"])
@@ -363,6 +361,9 @@ class TicketForumView(discord.ui.View):
             "count": count
         }
         save_data(data)
+        
+        # [UPDATED] ส่งข้อความแจ้งเตือนผู้กด (Visible only to user)
+        await interaction.followup.send(f"✅ เปิด Ticket เรียบร้อยแล้ว: {ticket_chan.mention}", ephemeral=True)
 
     @discord.ui.button(label=MESSAGES["tf_btn_report"], style=discord.ButtonStyle.red, custom_id="tf_report")
     async def report(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -385,12 +386,11 @@ class ReportModal(discord.ui.Modal, title=MESSAGES["tf_modal_report_title"]):
             log = interaction.guild.get_channel(conf["log_id"])
             
             pings = []
-            for admin_id in data["guilds"][guild_id]["admins"]:
-                if interaction.guild.get_role(admin_id): pings.append(f"<@&{admin_id}>")
-                else: pings.append(f"<@{admin_id}>")
-            for sup_id in data["guilds"][guild_id]["supports"]:
-                if interaction.guild.get_role(sup_id): pings.append(f"<@&{sup_id}>")
-                else: pings.append(f"<@{sup_id}>")
+            target_ids = set(data["guilds"][guild_id]["admins"] + data["guilds"][guild_id]["supports"])
+            for tid in target_ids:
+                role = interaction.guild.get_role(tid)
+                if role: pings.append(role.mention)
+                else: pings.append(f"<@{tid}>")
             
             ping_msg = " ".join(pings) if pings else "@here"
 
@@ -414,7 +414,6 @@ class TicketControlView(discord.ui.View):
         self.forum_msg_id = forum_msg_id
         self.count = count
 
-    # [NEW] ปุ่มเรียกแอดมิน (คนกลาง)
     @discord.ui.button(label="เรียกแอดมิน (คนกลาง) 🔔", style=discord.ButtonStyle.blurple, row=0)
     async def call_admin(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
@@ -423,12 +422,10 @@ class TicketControlView(discord.ui.View):
         guild_id = str(interaction.guild_id)
         init_guild_data(data, guild_id)
         
-        # ค้นหา Admin & Support ที่ตั้งค่าไว้
         pings = []
         target_ids = set(data["guilds"][guild_id]["admins"] + data["guilds"][guild_id]["supports"])
         
         for target_id in target_ids:
-            role = interaction.guild.get_channel(target_id) # Mistake here: get_channel is wrong for ID, checking Role
             role = interaction.guild.get_role(target_id)
             if role:
                 pings.append(role.mention)
@@ -436,7 +433,6 @@ class TicketControlView(discord.ui.View):
                 pings.append(f"<@{target_id}>")
         
         note = ""
-        # Fallback: ถ้าไม่มีการตั้งค่าไว้เลย ให้หาคนที่มีสิทธิ์ Administrator
         if not pings:
             for member in interaction.guild.members:
                 if not member.bot and member.guild_permissions.administrator:
@@ -447,7 +443,6 @@ class TicketControlView(discord.ui.View):
         
         await interaction.channel.send(f"🔔 **มีผู้เรียกคนกลาง/แอดมิน!** {ping_msg}{note}")
         
-        # ปิดปุ่มหลังจากกดแล้ว
         button.disabled = True
         button.label = "เรียกแอดมินแล้ว ✅"
         await interaction.edit_original_response(view=self)
@@ -460,7 +455,6 @@ class TicketControlView(discord.ui.View):
         guild_id = str(interaction.guild_id)
         init_guild_data(data, guild_id)
         
-        # [FIXED] Combine Admin & Support Logic properly
         target_ids = set(data["guilds"][guild_id]["admins"] + data["guilds"][guild_id]["supports"])
         pings = []
         for tid in target_ids:
