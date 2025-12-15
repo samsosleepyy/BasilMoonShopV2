@@ -38,6 +38,9 @@ class AuctionSystem(commands.Cog):
             return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
         await interaction.response.send_modal(AuctionSetupModal())
 
+# =========================================
+# 1. SETUP MODALS
+# =========================================
 class AuctionSetupModal(discord.ui.Modal, title=MESSAGES["auc_step1_title"]):
     item_name = discord.ui.TextInput(label=MESSAGES["auc_lbl_item"], placeholder="ชื่อสินค้า", required=True)
     start_price = discord.ui.TextInput(label=MESSAGES["auc_lbl_start"], placeholder=MESSAGES["auc_ph_start"], required=True)
@@ -75,7 +78,7 @@ class AuctionSetupModal2(discord.ui.Modal, title=MESSAGES["auc_step2_title"]):
     end_time = discord.ui.TextInput(label=MESSAGES["auc_lbl_time"], placeholder=MESSAGES["auc_ph_time"], required=True)
     link = discord.ui.TextInput(label=MESSAGES["auc_lbl_link"], placeholder=MESSAGES["auc_ph_link"], required=True)
     rights = discord.ui.TextInput(label=MESSAGES["auc_lbl_rights"], placeholder=MESSAGES["auc_ph_rights"], required=True)
-    # [UPDATED] บังคับกรอก + Placeholder
+    # [FIXED] บังคับกรอก + Placeholder ตามที่ขอ
     extra = discord.ui.TextInput(label=MESSAGES["auc_lbl_extra"], style=discord.TextStyle.paragraph, required=True, placeholder="อธิบายสินค้าหรือกฎ")
 
     def __init__(self, temp_data):
@@ -158,11 +161,11 @@ class AuctionAdminApproveView(discord.ui.View):
                             f"👑 <@{data['owner_id']}>\n" \
                             f"💰 {data['start']:,} บาท\n" \
                             f"➕ {data['step']:,} บาท\n" \
-                            f"🛎️ {data['autobuy']:,} บาท" if data['autobuy'] else ""
+                            f"🛑 {data['autobuy']:,} บาท" if data['autobuy'] else ""
         
-        embed.add_field(name="📜 ", value=data['rights'], inline=True)
-        embed.add_field(name="ℹ️ ", value=data['extra'], inline=True)
-        embed.add_field(name="⏳ ", value=f"<t:{timestamp}:R>", inline=False)
+        embed.add_field(name="📜 สิทธิ์", value=data['rights'], inline=True)
+        embed.add_field(name="ℹ️ เพิ่มเติม", value=data['extra'], inline=True)
+        embed.add_field(name="⏳ ปิดประมูล", value=f"<t:{timestamp}:R>", inline=False)
         embed.set_footer(text=f"ปิดเวลา: {end_time.strftime('%H:%M')}")
 
         await interaction.followup.send("เลือกห้องที่จะลงประมูล:", view=AuctionChannelSelectView(data, embed))
@@ -239,21 +242,23 @@ class AuctionView(discord.ui.View):
             return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
         
         await interaction.response.defer()
+        # เรียก Logic จบประมูลเต็มรูปแบบ
         await self.end_auction(interaction.message.id, interaction.guild)
 
-    # [UPDATED] ปุ่มรายงาน
+    # [NEW] ปุ่มรายงาน (Report)
     @discord.ui.button(label="รายงาน", style=discord.ButtonStyle.red, emoji="🚨", custom_id="auc_report")
     async def report(self, interaction: discord.Interaction, button: discord.ui.Button):
         data = load_data()
         msg_id = str(interaction.message.id)
         if msg_id in data["active_auctions"]:
             auc = data["active_auctions"][msg_id]
-            # เจ้าของห้ามกด
+            # เจ้าของห้ามกดรายงานตัวเอง
             if interaction.user.id == auc["owner_id"]:
                 return await interaction.response.send_message("❌ คุณไม่สามารถรายงานการประมูลของตัวเองได้", ephemeral=True)
         
         await interaction.response.send_modal(AuctionReportModal(msg_id))
 
+    # [FIXED] คืนค่า Logic จบประมูลแบบเต็ม (Full Logic)
     async def end_auction(self, message_id, guild):
         data = load_data()
         msg_id = str(message_id)
@@ -261,33 +266,61 @@ class AuctionView(discord.ui.View):
         
         auc = data["active_auctions"][msg_id]
         channel = guild.get_channel(auc["channel_id"])
-        msg = await channel.fetch_message(int(msg_id))
         
+        try:
+            msg = await channel.fetch_message(int(msg_id))
+        except:
+            # ถ้าหาข้อความไม่เจอ (อาจโดนลบ) ให้ลบข้อมูลทิ้งเลย
+            del data["active_auctions"][msg_id]
+            save_data(data)
+            return
+
+        # ปิดปุ่ม
+        await msg.edit(view=None)
+
         if not auc["winner_id"]:
+            # ไม่มีคนบิด
             await channel.send(MESSAGES["auc_end_no_bid"].format(count=auc["count"], seller=f"<@{auc['owner_id']}>"))
         else:
+            # มีผู้ชนะ
             winner = guild.get_member(auc["winner_id"])
             price = auc["current_bid"]
             
+            # ประกาศผู้ชนะ
             await channel.send(MESSAGES["auc_end_winner"].format(count=auc["count"], winner=winner.mention, price=f"{price:,}", time=60))
             
+            # สร้างห้องปิดดีล (Deal Channel)
             overwrites = {
                 guild.default_role: discord.PermissionOverwrite(read_messages=False),
                 winner: discord.PermissionOverwrite(read_messages=True),
                 guild.get_member(auc['owner_id']): discord.PermissionOverwrite(read_messages=True),
                 guild.me: discord.PermissionOverwrite(read_messages=True)
             }
-            deal_chan = await guild.create_text_channel(f"deal-auc-{auc['count']}", overwrites=overwrites)
+            deal_chan_name = f"deal-auc-{auc['count']}"
+            deal_chan = await guild.create_text_channel(deal_chan_name, overwrites=overwrites)
             
+            # ส่งข้อมูลการชำระเงิน
             embed = discord.Embed(title="💸 ชำระเงิน", description=f"ยอดปิดประมูล: **{price:,} บาท**\nกรุณาโอนเงินผ่านช่องทางด้านล่าง", color=discord.Color.green())
             embed.set_image(url=auc["img_pay"])
             
             await deal_chan.send(content=f"{winner.mention} <@{auc['owner_id']}>", embed=embed)
             await deal_chan.send(MESSAGES["auc_lock_msg"].format(winner=winner.mention))
 
+            # ส่ง DM หาผู้ชนะ (ถ้าเปิด DM)
+            try:
+                dm_embed = discord.Embed(title="🎉 คุณชนะการประมูล!", color=discord.Color.gold())
+                dm_embed.add_field(name="สินค้า", value=auc["name"])
+                dm_embed.add_field(name="ราคาจบ", value=f"{price:,} บาท")
+                dm_embed.add_field(name="ลิ้งค์ดาวน์โหลด/ข้อมูล", value=f"||{auc['link']}||", inline=False)
+                dm_embed.set_footer(text="ขอบคุณที่ใช้บริการครับ")
+                await winner.send(embed=dm_embed)
+            except:
+                await deal_chan.send(f"⚠️ ไม่สามารถส่ง DM หา {winner.mention} ได้ (โปรดรับสินค้าในห้องนี้แทน)")
+                await deal_chan.send(f"📦 **ข้อมูลสินค้า:** ||{auc['link']}||")
+
+        # ลบออกจาก Active
         del data["active_auctions"][msg_id]
         save_data(data)
-        await msg.edit(view=None)
 
 # [NEW] Modal รายงานการประมูล
 class AuctionReportModal(discord.ui.Modal, title="รายงานการประมูล"):
@@ -304,7 +337,7 @@ class AuctionReportModal(discord.ui.Modal, title="รายงานการป
         guild_id = str(interaction.guild_id)
         init_guild_data(data, guild_id)
         
-        # Ping Logic
+        # Ping Logic (Admin + Support)
         pings = []
         target_ids = set(data["guilds"][guild_id]["admins"] + data["guilds"][guild_id]["supports"])
         for tid in target_ids:
@@ -314,14 +347,13 @@ class AuctionReportModal(discord.ui.Modal, title="รายงานการป
         
         ping_msg = " ".join(pings) if pings else "@here"
         
-        # Build Report Embed
         embed = discord.Embed(title="🚨 มีการรายงานการประมูล", color=discord.Color.red())
         embed.add_field(name="🔗 ลิ้งค์ประมูล", value=f"https://discord.com/channels/{interaction.guild_id}/{interaction.channel_id}/{self.message_id}", inline=False)
         embed.add_field(name="👤 ผู้รายงาน", value=interaction.user.mention, inline=True)
         embed.add_field(name="📝 เหตุผล", value=self.reason.value, inline=False)
         embed.timestamp = datetime.datetime.now()
 
-        # Send to current channel (Context)
+        # Send Log to Current Channel (for context) & Log Channel (if config exists)
         await interaction.channel.send(content=f"{ping_msg} **มีการรายงานเข้ามา!**", embed=embed)
 
 # =========================================
@@ -369,6 +401,7 @@ class AuctionEditImageView(discord.ui.View):
         await interaction.response.edit_message(content="⚙️ **เมนูแก้ไขการประมูล**", view=view)
 
     async def process_image_edit(self, interaction: discord.Interaction, key):
+        # [CRITICAL] Defer immediately to prevent interaction fail
         await interaction.response.defer(ephemeral=True) 
         
         await interaction.followup.send("📤 **กรุณาส่งรูปภาพใหม่มาในช่องนี้** (ภายใน 60 วินาที...)", ephemeral=True)
@@ -390,12 +423,13 @@ class AuctionEditImageView(discord.ui.View):
                     channel = interaction.guild.get_channel(auc["channel_id"])
                     auction_msg = await channel.fetch_message(int(self.message_id))
                     
-                    embed = auction_msg.embeds[0]
+                    # Update embed if it's item image
                     if key == "img_item":
+                        embed = auction_msg.embeds[0]
                         embed.set_image(url=new_url)
+                        await auction_msg.edit(embed=embed)
                     
-                    await auction_msg.edit(embed=embed)
-                    await interaction.followup.send("✅ **อัปเดตรูปภาพเรียบร้อยแล้ว!**", ephemeral=True)
+                    await interaction.followup.send("✅ **อัปเดตเลูปภาพเรียบร้อยแล้ว!**", ephemeral=True)
                     try: await msg.delete() 
                     except: pass
                 except Exception as e:
@@ -409,6 +443,7 @@ class AuctionEditImageView(discord.ui.View):
 class AuctionEditModal(discord.ui.Modal, title="แก้ไขรายละเอียด"):
     name = discord.ui.TextInput(label="ชื่อสินค้า", required=True)
     rights = discord.ui.TextInput(label="สิทธิ์", required=True)
+    # [FIXED] บังคับกรอก + Placeholder
     extra = discord.ui.TextInput(label="เพิ่มเติม", required=True, style=discord.TextStyle.paragraph, placeholder="อธิบายสินค้าหรือกฎ")
 
     def __init__(self, message_id, current_data):
@@ -438,7 +473,7 @@ class AuctionEditModal(discord.ui.Modal, title="แก้ไขรายละ�
                                     f"👑 **ผู้เปิดประมูล:** <@{auc['owner_id']}>\n" \
                                     f"💰 **ราคาเริ่มต้น:** {auc['start']:,} บาท\n" \
                                     f"➕ **บิดขั้นต่ำ:** {auc['step']:,} บาท\n" \
-                                    f"🛑 **ซื้อทันที:** {auc['autobuy']:,} บาท" if auc['autobuy'] else ""
+                                    f"🛑 **ซื้อทันที (Auto Buy):** {auc['autobuy']:,} บาท" if auc['autobuy'] else ""
                 
                 for i, field in enumerate(embed.fields):
                     if "สิทธิ์" in field.name:
@@ -492,6 +527,7 @@ class BidModal(discord.ui.Modal, title="เสนอราคา (Bid)"):
             msg = await channel.fetch_message(int(self.message_id))
             await msg.channel.send(f"💸 **{interaction.user.mention}** เสนอราคา **{bid_amount:,}** บาท!")
             
+            # [CRITICAL] Trigger End Auction if Auto-buy reached
             if is_autobuy:
                 cog = interaction.client.get_cog("AuctionSystem")
                 if cog: await cog.end_auction(self.message_id, interaction.guild)
