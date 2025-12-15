@@ -7,7 +7,7 @@ import datetime
 import re
 import asyncio
 import aiohttp
-import traceback # เพิ่มเพื่อดู Error แบบละเอียด
+import traceback
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import MESSAGES, load_data, save_data, is_admin_or_has_permission, get_files_from_urls, init_guild_data
@@ -16,11 +16,10 @@ class AuctionSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.active_auctions = {}
-        # ย้ายการเริ่ม Loop ไปที่ cog_load เพื่อความปลอดภัย
     
     async def cog_load(self):
         self.bot.loop.create_task(self.restore_auction_views())
-        self.bot.loop.create_task(self.auction_loop()) # เริ่ม Loop ที่นี่
+        self.bot.loop.create_task(self.auction_loop())
 
     async def restore_auction_views(self):
         await self.bot.wait_until_ready()
@@ -31,21 +30,16 @@ class AuctionSystem(commands.Cog):
         if "active_auctions" in data:
             for chan_id, auction_data in data["active_auctions"].items():
                 try:
-                    # [FIX] การกู้คืนเวลาที่รองรับข้อมูลเก่าและใหม่
                     if 'end_time_ts' in auction_data:
-                        # แบบใหม่ (Timestamp)
                         auction_data['end_time'] = datetime.datetime.fromtimestamp(float(auction_data['end_time_ts']))
                     elif isinstance(auction_data.get('end_time'), str):
-                        # แบบเก่า (String) - พยายามแปลงกลับ
                         try:
                             auction_data['end_time'] = datetime.datetime.fromisoformat(auction_data['end_time'])
                         except:
-                            # ถ้าแปลงไม่ได้ ให้ตั้งเวลาจบเป็นอีก 1 ชั่วโมงข้างหน้าเพื่อกันบั๊ก
-                            auction_data['end_time'] = datetime.datetime.now() + datetime.timedelta(hours=1)
+                            auction_data['end_time'] = datetime.datetime.now() + datetime.timedelta(hours=24)
                     
                     self.active_auctions[int(chan_id)] = auction_data
                     
-                    # กู้คืนปุ่ม
                     if auction_data.get('message_id'):
                         view = AuctionControlView(auction_data['seller_id'], self)
                         self.bot.add_view(view, message_id=auction_data['message_id'])
@@ -62,7 +56,6 @@ class AuctionSystem(commands.Cog):
             serializable_auctions = {}
             for cid, adata in self.active_auctions.items():
                 copy_data = adata.copy()
-                # แปลง datetime เป็น timestamp เพื่อให้ save ลง json ได้ไม่พัง
                 if isinstance(copy_data.get('end_time'), datetime.datetime):
                     copy_data['end_time_ts'] = copy_data['end_time'].timestamp()
                     copy_data['end_time'] = copy_data['end_time'].isoformat()
@@ -73,7 +66,6 @@ class AuctionSystem(commands.Cog):
         except Exception as e:
             print(f"❌ Save Error: {e}")
 
-    # [CRITICAL FIX] ป้องกัน Loop ตายเงียบ
     async def auction_loop(self):
         await self.bot.wait_until_ready()
         print("🟢 Auction Loop Started")
@@ -81,8 +73,6 @@ class AuctionSystem(commands.Cog):
             try:
                 to_remove = []
                 now = datetime.datetime.now()
-                
-                # Copy dict เพื่อป้องกัน error 'dictionary changed size during iteration'
                 current_auctions = list(self.active_auctions.items())
                 
                 for chan_id, data in current_auctions:
@@ -90,18 +80,13 @@ class AuctionSystem(commands.Cog):
                         to_remove.append(chan_id)
                         continue
                     
-                    # ตรวจสอบเวลาจบ
                     end_time = data.get('end_time')
-                    if not isinstance(end_time, datetime.datetime):
-                        # ถ้าเวลาเพี้ยน ให้ข้ามไปก่อน
-                        continue
+                    if not isinstance(end_time, datetime.datetime): continue
 
                     if now >= end_time:
-                        print(f"⏰ Auction {chan_id} ended. Processing...")
                         await self.end_auction_logic(chan_id)
                         to_remove.append(chan_id)
                 
-                # ลบรายการที่จบแล้ว
                 if to_remove:
                     for rid in to_remove:
                         if rid in self.active_auctions:
@@ -110,14 +95,13 @@ class AuctionSystem(commands.Cog):
             
             except Exception as e:
                 print(f"⚠️ Error in Auction Loop: {e}")
-                traceback.print_exc() # ปริ้น Error แบบเต็มเพื่อ Debug
+                traceback.print_exc()
                 
-            await asyncio.sleep(5) # พัก 5 วินาทีเสมอ
+            await asyncio.sleep(5)
 
     @commands.Cog.listener()
     async def on_message(self, message):
         if message.author.bot: return
-        # Check if channel is in active auctions
         if message.channel.id in self.active_auctions and self.active_auctions[message.channel.id].get('active'):
             try:
                 content = message.content.strip()
@@ -126,17 +110,12 @@ class AuctionSystem(commands.Cog):
                 match = re.match(r'^(?:up|อัพ|บิด)\s*(\d+)', content, re.IGNORECASE)
                 if match:
                     amount = int(match.group(1))
-                    # Basic checks
                     if amount > 999999999: return 
                     if message.author.id == auction_data['seller_id']: return
 
-                    start_price = auction_data['start_price']
-                    bid_step = auction_data['bid_step']
                     current_price = auction_data['current_price']
-                    
                     if amount <= current_price: return
                     
-                    # Auto Buy Logic
                     is_autobuy = False
                     if auction_data.get('close_price') and amount >= auction_data['close_price']:
                         is_autobuy = True
@@ -152,9 +131,8 @@ class AuctionSystem(commands.Cog):
                     
                     if is_autobuy:
                         response_text += MESSAGES["auc_bid_autobuy"]
-                        auction_data['end_time'] = datetime.datetime.now() # End immediately
+                        auction_data['end_time'] = datetime.datetime.now()
                     
-                    # Delete old bid msg to clean up
                     if auction_data.get('last_bid_msg_id'):
                         try: 
                             old_msg = await message.channel.fetch_message(auction_data['last_bid_msg_id'])
@@ -166,8 +144,7 @@ class AuctionSystem(commands.Cog):
                     
                     await self.save_active_auctions()
                     
-                    # Rename channel (Rate limit safe)
-                    if (datetime.datetime.now().timestamp() - auction_data.get('last_rename', 0)) > 300: # 5 mins cooldown
+                    if (datetime.datetime.now().timestamp() - auction_data.get('last_rename', 0)) > 300:
                         try:
                             data = load_data()
                             init_guild_data(data, message.guild.id)
@@ -193,10 +170,7 @@ class AuctionSystem(commands.Cog):
     async def end_auction_logic(self, channel_id):
         if channel_id not in self.active_auctions: return
         auction_data = self.active_auctions[channel_id]
-        
-        # Mark as inactive first to prevent re-entry
         auction_data['active'] = False
-        
         channel = self.bot.get_channel(channel_id)
         if not channel: return
         
@@ -235,8 +209,6 @@ class AuctionSystem(commands.Cog):
             channel.guild.get_member(winner_id): discord.PermissionOverwrite(read_messages=True, send_messages=True),
             channel.guild.me: discord.PermissionOverwrite(read_messages=True)
         }
-        
-        # Load local admins correctly
         local_admins = data["guilds"][guild_id]["admins"]
         for admin_id in local_admins:
             mem = channel.guild.get_member(admin_id)
@@ -269,7 +241,8 @@ class AuctionSystem(commands.Cog):
         if custom_end_timestamp:
             timestamp = custom_end_timestamp
         else:
-            duration = auction_data.get('duration_minutes', 60)
+            # ใช้ 24 ชม. เป็นค่าเริ่มต้นสำหรับการแสดงผล (ถ้ายังไม่เริ่ม)
+            duration = auction_data.get('duration_minutes', 1440) 
             end_time = datetime.datetime.now() + datetime.timedelta(minutes=duration)
             timestamp = int(end_time.timestamp())
         
@@ -382,35 +355,31 @@ class AuctionModalStep2(discord.ui.Modal, title=MESSAGES["auc_step2_title"]):
         d_link = str(auction_data.get("download_link", ""))
         d_rights = str(auction_data.get("rights", ""))
         d_extra = str(auction_data.get("extra_info", ""))
-        d_time = ""
-        if "duration_minutes" in auction_data: d_time = f"{auction_data['duration_minutes'] // 60:02d}:{auction_data['duration_minutes'] % 60:02d}"
         
         self.download_link = discord.ui.TextInput(label=MESSAGES["auc_lbl_link"], placeholder=MESSAGES["auc_ph_link"], required=True, default=d_link)
         self.rights = discord.ui.TextInput(label=MESSAGES["auc_lbl_rights"], placeholder=MESSAGES["auc_ph_rights"], required=True, default=d_rights)
+        # [UPDATED] บังคับกรอก + Placeholder
         self.extra_info = discord.ui.TextInput(label=MESSAGES["auc_lbl_extra"], placeholder="อธิบายสินค้าหรือกฎ", required=True, style=discord.TextStyle.paragraph, default=d_extra)
-        self.end_time_str = discord.ui.TextInput(label=MESSAGES["auc_lbl_time"], placeholder=MESSAGES["auc_ph_time"], required=True, default=d_time)
-        self.add_item(self.download_link); self.add_item(self.rights); self.add_item(self.extra_info); self.add_item(self.end_time_str)
+        
+        self.add_item(self.download_link); self.add_item(self.rights); self.add_item(self.extra_info)
     
     async def on_submit(self, interaction: discord.Interaction):
-        try:
-            h, m = map(int, self.end_time_str.value.split(':'))
-            total_minutes = (h * 60) + m
-            if total_minutes <= 0: raise ValueError
-            self.auction_data.update({"download_link": self.download_link.value, "rights": self.rights.value,"extra_info": self.extra_info.value,"duration_minutes": total_minutes, "seller_id": interaction.user.id})
-            if self.preview_msg:
-                await interaction.response.defer()
-                await self.cog.send_user_preview(interaction.channel, self.auction_data, self.preview_msg)
-            else:
-                data = load_data()
-                overwrites = {interaction.guild.default_role: discord.PermissionOverwrite(read_messages=False),interaction.user: discord.PermissionOverwrite(read_messages=True),interaction.guild.me: discord.PermissionOverwrite(read_messages=True)}
-                for admin_id in data["guilds"][str(interaction.guild_id)]["admins"]: 
-                    member = interaction.guild.get_member(admin_id)
-                    if member: overwrites[member] = discord.PermissionOverwrite(read_messages=True)
-                channel = await interaction.guild.create_text_channel(f"✧꒰ส่งรูปสินค้า📦-{interaction.user.name}꒱", overwrites=overwrites)
-                await interaction.response.send_message(MESSAGES["auc_created_channel"].format(channel=channel.mention), ephemeral=True)
-                self.cog.bot.loop.create_task(self.cog.wait_for_images(channel, interaction.user, self.auction_data))
-        except: 
-            if not interaction.response.is_done(): await interaction.response.send_message(MESSAGES["auc_err_time"], ephemeral=True)
+        # [UPDATED] ตั้งค่าเวลาอัตโนมัติ 24 ชม. (1440 นาที)
+        total_minutes = 1440
+        self.auction_data.update({"download_link": self.download_link.value, "rights": self.rights.value,"extra_info": self.extra_info.value,"duration_minutes": total_minutes, "seller_id": interaction.user.id})
+        
+        if self.preview_msg:
+            await interaction.response.defer()
+            await self.cog.send_user_preview(interaction.channel, self.auction_data, self.preview_msg)
+        else:
+            data = load_data()
+            overwrites = {interaction.guild.default_role: discord.PermissionOverwrite(read_messages=False),interaction.user: discord.PermissionOverwrite(read_messages=True),interaction.guild.me: discord.PermissionOverwrite(read_messages=True)}
+            for admin_id in data["guilds"][str(interaction.guild_id)]["admins"]: 
+                member = interaction.guild.get_member(admin_id)
+                if member: overwrites[member] = discord.PermissionOverwrite(read_messages=True)
+            channel = await interaction.guild.create_text_channel(f"✧꒰ส่งรูปสินค้า📦-{interaction.user.name}꒱", overwrites=overwrites)
+            await interaction.response.send_message(MESSAGES["auc_created_channel"].format(channel=channel.mention), ephemeral=True)
+            self.cog.bot.loop.create_task(self.cog.wait_for_images(channel, interaction.user, self.auction_data))
 
 class PreviewView(discord.ui.View):
     def __init__(self, auction_data, temp_channel, cog):
@@ -443,7 +412,7 @@ class EditSelectionView(discord.ui.View):
     async def edit_form1(self, interaction: discord.Interaction, button: discord.ui.Button):
         modal = AuctionModalStep1(None, None, None, None, self.cog, default_data=self.auction_data, preview_msg=self.message)
         await interaction.response.send_modal(modal)
-    @discord.ui.button(label="แก้ไขฟอร์ม 2 (ลิ้งค์/เวลา)", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="แก้ไขฟอร์ม 2 (ลิ้งค์/ข้อมูล)", style=discord.ButtonStyle.secondary)
     async def edit_form2(self, interaction: discord.Interaction, button: discord.ui.Button):
         modal = AuctionModalStep2(self.auction_data, self.cog, preview_msg=self.message)
         await interaction.response.send_modal(modal)
@@ -537,6 +506,7 @@ class AuctionControlView(discord.ui.View):
         view = AuctionEditView(msg_id)
         await interaction.response.send_message("⚙️ **เมนูแก้ไขการประมูล**", view=view, ephemeral=True)
 
+    # [NEW] ปุ่มรายงาน
     @discord.ui.button(label="รายงาน", style=discord.ButtonStyle.red, emoji="🚨", custom_id="auc_report")
     async def report(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id == self.seller_id:
