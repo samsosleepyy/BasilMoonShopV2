@@ -362,8 +362,7 @@ class AuctionModalStep2(discord.ui.Modal, title=MESSAGES["auc_step2_title"]):
         self.add_item(self.download_link); self.add_item(self.rights); self.add_item(self.extra_info)
     
     async def on_submit(self, interaction: discord.Interaction):
-        # [UPDATED] ตั้งค่าเวลาอัตโนมัติ 24 ชม. (1440 นาที)
-        total_minutes = 1440
+        total_minutes = 1440 # 24 Hours
         self.auction_data.update({"download_link": self.download_link.value, "rights": self.rights.value,"extra_info": self.extra_info.value,"duration_minutes": total_minutes, "seller_id": interaction.user.id})
         
         if self.preview_msg:
@@ -371,9 +370,7 @@ class AuctionModalStep2(discord.ui.Modal, title=MESSAGES["auc_step2_title"]):
             await self.cog.send_user_preview(interaction.channel, self.auction_data, self.preview_msg)
         else:
             data = load_data()
-            # [FIXED] Init guild data to prevent KeyError 'admins'
             init_guild_data(data, interaction.guild_id)
-            
             overwrites = {interaction.guild.default_role: discord.PermissionOverwrite(read_messages=False),interaction.user: discord.PermissionOverwrite(read_messages=True),interaction.guild.me: discord.PermissionOverwrite(read_messages=True)}
             
             if "admins" in data["guilds"][str(interaction.guild_id)]:
@@ -583,11 +580,15 @@ class AuctionReportModal(discord.ui.Modal, title="รายงานการป
         guild_id = str(interaction.guild_id)
         init_guild_data(data, guild_id)
         pings = []
-        target_ids = set(data["guilds"][guild_id]["admins"] + data["guilds"][guild_id]["supports"])
-        for tid in target_ids:
-            role = interaction.guild.get_role(tid)
-            if role: pings.append(role.mention)
-            else: pings.append(f"<@{tid}>")
+        
+        # Safe get admins & supports
+        if "admins" in data["guilds"][guild_id]:
+            for admin_id in data["guilds"][guild_id]["admins"]:
+                pings.append(f"<@{admin_id}>") # Use user ping for safety if role check fails
+        if "supports" in data["guilds"][guild_id]:
+            for sup_id in data["guilds"][guild_id]["supports"]:
+                pings.append(f"<@{sup_id}>")
+        
         ping_msg = " ".join(pings) if pings else "@here"
         
         embed = discord.Embed(title="🚨 มีการรายงานการประมูล", color=discord.Color.red())
