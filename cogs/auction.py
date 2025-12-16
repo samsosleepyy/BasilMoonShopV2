@@ -68,7 +68,6 @@ class AuctionSystem(commands.Cog):
 
     async def auction_loop(self):
         await self.bot.wait_until_ready()
-        print("🟢 Auction Loop Started")
         while True:
             try:
                 to_remove = []
@@ -95,7 +94,6 @@ class AuctionSystem(commands.Cog):
             
             except Exception as e:
                 print(f"⚠️ Error in Auction Loop: {e}")
-                traceback.print_exc()
                 
             await asyncio.sleep(5)
 
@@ -209,10 +207,10 @@ class AuctionSystem(commands.Cog):
             channel.guild.get_member(winner_id): discord.PermissionOverwrite(read_messages=True, send_messages=True),
             channel.guild.me: discord.PermissionOverwrite(read_messages=True)
         }
-        local_admins = data["guilds"][guild_id]["admins"]
-        for admin_id in local_admins:
-            mem = channel.guild.get_member(admin_id)
-            if mem: overwrites[mem] = discord.PermissionOverwrite(read_messages=True)
+        if "admins" in data["guilds"][guild_id]:
+            for admin_id in data["guilds"][guild_id]["admins"]:
+                mem = channel.guild.get_member(admin_id)
+                if mem: overwrites[mem] = discord.PermissionOverwrite(read_messages=True)
         
         await channel.edit(overwrites=overwrites)
         
@@ -272,30 +270,47 @@ class AuctionSystem(commands.Cog):
         msg = await channel.send(embed=embed, files=files_to_send, view=view)
         return msg
 
-    async def wait_for_images(self, channel, user, auction_data, is_edit=False):
+    async def wait_for_images(self, channel, user, auction_data, is_edit=False, edit_mode=None):
+        # edit_mode: 'item' or 'payment' or None (Initial)
         def check_product(m): return m.author.id == user.id and m.channel.id == channel.id and m.attachments
         try:
-            await channel.send(MESSAGES["auc_wait_img_1"].format(user=user.mention))
-            msg1 = await self.bot.wait_for('message', check=check_product, timeout=300)
-            auction_data["img_product_urls"] = [att.url for att in msg1.attachments]
-            
-            await channel.send(MESSAGES["auc_wait_img_2"])
-            while True:
-                msg2 = await self.bot.wait_for('message', timeout=300)
-                if msg2.author.id != user.id or msg2.channel.id != channel.id: continue
-                if not msg2.attachments: continue
-                if len(msg2.attachments) > 1: await channel.send("⚠️ กรุณาส่ง QR Code เพียง **1 รูป** เท่านั้นครับ", delete_after=10); continue
-                if not msg2.attachments[0].content_type or not msg2.attachments[0].content_type.startswith('image'): await channel.send("⚠️ กรุณาส่งไฟล์ **รูปภาพ** เท่านั้นครับ", delete_after=10); continue
-                auction_data["img_qr_url"] = msg2.attachments[0].url
-                break
+            # Initial Upload (Both)
+            if not is_edit:
+                await channel.send(MESSAGES["auc_wait_img_1"].format(user=user.mention))
+                msg1 = await self.bot.wait_for('message', check=check_product, timeout=300)
+                auction_data["img_product_urls"] = [att.url for att in msg1.attachments]
                 
-            await channel.send(MESSAGES["auc_img_received"])
-            if is_edit:
-                await channel.send("✅ อัปเดตรูปภาพเรียบร้อยแล้ว!")
-            else:
+                await channel.send(MESSAGES["auc_wait_img_2"])
+                while True:
+                    msg2 = await self.bot.wait_for('message', timeout=300)
+                    if msg2.author.id != user.id or msg2.channel.id != channel.id: continue
+                    if not msg2.attachments: continue
+                    auction_data["img_qr_url"] = msg2.attachments[0].url
+                    break
+                
+                await channel.send(MESSAGES["auc_img_received"])
                 await self.send_user_preview(channel, auction_data)
+            
+            # Edit Mode (Single Upload)
+            else:
+                target_msg = "รูปสินค้าใหม่" if edit_mode == "item" else "รูปชำระเงินใหม่"
+                await channel.send(f"📤 **กรุณาส่ง{target_msg}** (ภายใน 60 วินาที...)")
                 
-        except asyncio.TimeoutError: await channel.delete()
+                msg = await self.bot.wait_for('message', check=check_product, timeout=60)
+                new_url = msg.attachments[0].url
+                
+                if edit_mode == "item":
+                    auction_data["img_product_urls"] = [new_url] # For setup, we replace list with 1 item for simplicity or fetch all attachments
+                elif edit_mode == "payment":
+                    auction_data["img_qr_url"] = new_url
+                
+                await channel.send("✅ อัปเดตรูปภาพเรียบร้อยแล้ว!")
+                # Re-send preview
+                await self.send_user_preview(channel, auction_data, old_preview_msg=None)
+
+        except asyncio.TimeoutError:
+            if not is_edit: await channel.delete()
+            else: await channel.send("⌛ หมดเวลาแก้ไขรูป")
 
 # --- Views ---
 class StartAuctionView(discord.ui.View):
@@ -362,7 +377,7 @@ class AuctionModalStep2(discord.ui.Modal, title=MESSAGES["auc_step2_title"]):
         self.add_item(self.download_link); self.add_item(self.rights); self.add_item(self.extra_info)
     
     async def on_submit(self, interaction: discord.Interaction):
-        total_minutes = 1440 # 24 Hours
+        total_minutes = 1440
         self.auction_data.update({"download_link": self.download_link.value, "rights": self.rights.value,"extra_info": self.extra_info.value,"duration_minutes": total_minutes, "seller_id": interaction.user.id})
         
         if self.preview_msg:
@@ -402,27 +417,67 @@ class PreviewView(discord.ui.View):
         await interaction.message.edit(view=self)
     @discord.ui.button(label="✏️ แก้ไข", style=discord.ButtonStyle.primary)
     async def edit(self, interaction: discord.Interaction, button: discord.ui.Button):
-        view = EditSelectionView(self.auction_data, self.temp_channel, self.cog, interaction.message)
-        await interaction.response.edit_message(view=view)
+        # [UPDATED] ใช้เมนูแบบใหม่
+        view = PreviewEditMenuView(self.auction_data, self.temp_channel, self.cog, interaction.message)
+        await interaction.response.edit_message(content="⚙️ **เมนูแก้ไข (Preview)**", view=view)
 
-class EditSelectionView(discord.ui.View):
+# [NEW] เมนูแก้ไขสำหรับหน้า Preview (เหมือนหน้า Active Auction)
+class PreviewEditMenuView(discord.ui.View):
     def __init__(self, auction_data, temp_channel, cog, message):
         super().__init__(timeout=None)
         self.auction_data, self.temp_channel, self.cog, self.message = auction_data, temp_channel, cog, message
-    @discord.ui.button(label="แก้ไขฟอร์ม 1 (ราคา/ชื่อ)", style=discord.ButtonStyle.secondary)
-    async def edit_form1(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+    @discord.ui.button(label="📝 แก้ไขข้อมูล", style=discord.ButtonStyle.primary)
+    async def edit_data(self, interaction: discord.Interaction, button: discord.ui.Button):
+        view = PreviewEditDataSelectView(self.auction_data, self.temp_channel, self.cog, self.message)
+        await interaction.response.edit_message(content="🔻 **เลือกส่วนที่ต้องการแก้ไข:**", view=view)
+
+    @discord.ui.button(label="🖼️ แก้ไขรูปภาพ", style=discord.ButtonStyle.success)
+    async def edit_image(self, interaction: discord.Interaction, button: discord.ui.Button):
+        view = PreviewEditImageSelectView(self.auction_data, self.temp_channel, self.cog, self.message)
+        await interaction.response.edit_message(content="🖼️ **เลือกรูปที่ต้องการแก้ไข:**", view=view)
+
+    @discord.ui.button(label="⬅️ ย้อนกลับ", style=discord.ButtonStyle.secondary)
+    async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # กลับไปหน้า Preview หลัก (PreviewView)
+        # Note: PreviewView needs message reconstruct, easier to just re-send preview
+        await interaction.response.defer()
+        await self.cog.send_user_preview(self.temp_channel, self.auction_data, self.message)
+
+class PreviewEditDataSelectView(discord.ui.View):
+    def __init__(self, auction_data, temp_channel, cog, message):
+        super().__init__(timeout=None)
+        self.auction_data, self.temp_channel, self.cog, self.message = auction_data, temp_channel, cog, message
+
+    @discord.ui.button(label="ส่วนที่ 1 (ราคา/ชื่อ)", style=discord.ButtonStyle.secondary)
+    async def edit_part1(self, interaction: discord.Interaction, button: discord.ui.Button):
         modal = AuctionModalStep1(None, None, None, None, self.cog, default_data=self.auction_data, preview_msg=self.message)
         await interaction.response.send_modal(modal)
-    @discord.ui.button(label="แก้ไขฟอร์ม 2 (ลิ้งค์/ข้อมูล)", style=discord.ButtonStyle.secondary)
-    async def edit_form2(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+    @discord.ui.button(label="ส่วนที่ 2 (ลิ้งค์/ข้อมูล)", style=discord.ButtonStyle.secondary)
+    async def edit_part2(self, interaction: discord.Interaction, button: discord.ui.Button):
         modal = AuctionModalStep2(self.auction_data, self.cog, preview_msg=self.message)
         await interaction.response.send_modal(modal)
-    @discord.ui.button(label="แก้ไขรูปภาพ", style=discord.ButtonStyle.secondary)
-    async def edit_images(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("กรุณาส่งรูปสินค้าใหม่ และตามด้วยรูป QR Code ใหม่ครับ", ephemeral=True)
+
+class PreviewEditImageSelectView(discord.ui.View):
+    def __init__(self, auction_data, temp_channel, cog, message):
+        super().__init__(timeout=None)
+        self.auction_data, self.temp_channel, self.cog, self.message = auction_data, temp_channel, cog, message
+
+    @discord.ui.button(label="📦 รูปสินค้า", style=discord.ButtonStyle.primary)
+    async def edit_item_img(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.trigger_image_edit(interaction, "item")
+
+    @discord.ui.button(label="💳 รูปชำระเงิน", style=discord.ButtonStyle.primary)
+    async def edit_pay_img(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.trigger_image_edit(interaction, "payment")
+
+    async def trigger_image_edit(self, interaction: discord.Interaction, mode):
+        await interaction.response.send_message("กรุณาส่งรูปใหม่มาในช่องนี้ (ภายใน 60 วิ)", ephemeral=True)
+        # ลบข้อความเก่าเพื่อให้สะอาด
         try: await self.message.delete()
         except: pass
-        self.cog.bot.loop.create_task(self.cog.wait_for_images(self.temp_channel, interaction.user, self.auction_data, is_edit=True))
+        self.cog.bot.loop.create_task(self.cog.wait_for_images(self.temp_channel, interaction.user, self.auction_data, is_edit=True, edit_mode=mode))
 
 class ApprovalView(discord.ui.View):
     def __init__(self, auction_data, temp_channel, cog):
@@ -580,15 +635,11 @@ class AuctionReportModal(discord.ui.Modal, title="รายงานการป
         guild_id = str(interaction.guild_id)
         init_guild_data(data, guild_id)
         pings = []
-        
-        # Safe get admins & supports
-        if "admins" in data["guilds"][guild_id]:
-            for admin_id in data["guilds"][guild_id]["admins"]:
-                pings.append(f"<@{admin_id}>") # Use user ping for safety if role check fails
-        if "supports" in data["guilds"][guild_id]:
-            for sup_id in data["guilds"][guild_id]["supports"]:
-                pings.append(f"<@{sup_id}>")
-        
+        target_ids = set(data["guilds"][guild_id]["admins"] + data["guilds"][guild_id]["supports"])
+        for tid in target_ids:
+            role = interaction.guild.get_role(tid)
+            if role: pings.append(role.mention)
+            else: pings.append(f"<@{tid}>")
         ping_msg = " ".join(pings) if pings else "@here"
         
         embed = discord.Embed(title="🚨 มีการรายงานการประมูล", color=discord.Color.red())
