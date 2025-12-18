@@ -134,7 +134,8 @@ HTML_TEMPLATE = """
 {% if not session.get('auth') %}
     <div class="login-wrapper">
         <h1 class="glitch">ACCESS CONTROL</h1>
-        <form method="POST" action="/login">
+        <!-- FIX: Action changed to "/" to match the route -->
+        <form method="POST" action="/">
             <input type="password" name="passcode" class="cyber-input" placeholder="ENTER PASSCODE" maxlength="6" autofocus required>
             <br>
             <button type="submit" class="cyber-btn">AUTHENTICATE</button>
@@ -346,7 +347,6 @@ def server_action():
 
     elif action == 'invite':
         if guild:
-            # Correctly indented block
             future = asyncio.run_coroutine_threadsafe(create_or_get_invite(guild), bot_instance.loop)
             try:
                 invite_url, creator = future.result(timeout=5)
