@@ -16,7 +16,7 @@ else:
     with open("data.json", "w", encoding="utf-8") as f:
         json.dump(data, f)
 
-token = os.environ.get("TOKEN") or "YOUR_TOKEN_HERE" # ใส่ Token ของคุณถ้าเทสในเครื่อง
+token = os.environ.get("TOKEN") or "MTQ0Mzc4NTU4MTM2MzQ2MjE2NA.GlBD0S.0XKGaCq8FGPym4s8v_1M3GyTJdwhDJOJ--EHqI" # ใส่ Token ของคุณถ้าเทสในเครื่อง
 
 # --- Bot Setup ---
 intents = discord.Intents.default()
