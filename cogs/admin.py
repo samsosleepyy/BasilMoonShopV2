@@ -32,23 +32,10 @@ class AdminSystem(commands.Cog):
         self.bot.startup_notified = True
         print(f"✅ Bot is ready! Logged in as {self.bot.user}")
 
-        timestamp = datetime.datetime.now().strftime('%d/%m/%Y %H:%M:%S')
-        ram_usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
-        
-        for owner_id in OWNER_IDS:
-            try:
-                user = await self.bot.fetch_user(owner_id)
-                if user:
-                    embed = discord.Embed(
-                        title="🟢 System Online / Deployed",
-                        description="บอทเริ่มทำงานใหม่/อัปเดต เรียบร้อยแล้วครับ ✅",
-                        color=discord.Color.brand_green()
-                    )
-                    embed.add_field(name="⏰ เวลาเริ่ม (Server Time)", value=f"`{timestamp}`", inline=False)
-                    embed.add_field(name="🧠 RAM เริ่มต้น", value=f"`{ram_usage:.2f} MB`", inline=False)
-                    await user.send(embed=embed)
-            except Exception as e:
-                print(f"⚠️ Failed to DM Owner ({owner_id}): {e}")
+        # [REMOVED] DM to Owner to prevent Rate Limit
+        # timestamp = datetime.datetime.now().strftime('%d/%m/%Y %H:%M:%S')
+        # ram_usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+        # ... (DM logic removed) ...
 
     # =========================================
     # 🔄 AUTO BACKUP LOOP
@@ -172,7 +159,6 @@ class AdminSystem(commands.Cog):
         else: 
             await interaction.followup.send(MESSAGES["sys_not_support"].format(target=target.mention), ephemeral=True)
 
-    # (Other commands like lockdown, anti-raid, etc. remain the same)
     @app_commands.command(name="lockdown", description=MESSAGES["desc_lockdown"])
     async def lockdown_cmd(self, interaction: discord.Interaction, seconds: int):
         await interaction.response.defer(ephemeral=True)
