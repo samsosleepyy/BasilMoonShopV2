@@ -44,7 +44,10 @@ class AuctionSystem(commands.Cog):
                         view = AuctionControlView(auction_data['seller_id'], self)
                         self.bot.add_view(view, message_id=auction_data['message_id'])
                         count += 1
-                        
+                    
+                    # [ADDED] Delay to prevent Rate Limit
+                    await asyncio.sleep(0.5)
+
                 except Exception as e:
                     print(f"⚠️ Failed to restore auction {chan_id}: {e}")
         
