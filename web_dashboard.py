@@ -230,12 +230,10 @@ HTML_TEMPLATE = """
 <div class="scanline"></div>
 
 {% if not session.get('auth') %}
-    <!-- LOGIN SCREEN -->
     <div class="login-wrapper">
         <div class="login-box">
             <h1 class="glitch-title">NETRUNNER<br>ACCESS</h1>
             <p class="blink-text" style="margin-bottom: 30px;">>> AUTHENTICATION REQUIRED <<</p>
-            <!-- Form submits to root '/' -->
             <form method="POST" action="/">
                 <input type="password" name="passcode" class="cyber-input" placeholder="ENTER 6-DIGIT CODE" maxlength="6" autofocus required 
                        style="font-size: 2rem; letter-spacing: 5px; width: 250px; margin-bottom: 20px;">
@@ -254,7 +252,6 @@ HTML_TEMPLATE = """
     </div>
 
 {% else %}
-    <!-- DASHBOARD -->
     <div class="container">
         <header style="display:flex; justify-content:space-between; align-items:center; border-bottom: 2px solid var(--yellow); padding-bottom: 20px; margin-bottom: 20px; background: rgba(0,0,0,0.5); padding: 20px;">
             <div>
@@ -268,7 +265,6 @@ HTML_TEMPLATE = """
         </header>
 
         <div class="dashboard-grid">
-            <!-- LEFT: STATS & CONTROLS -->
             <div class="sidebar">
                 <div class="panel">
                     <h2>SYSTEM_STATS</h2>
@@ -311,7 +307,6 @@ HTML_TEMPLATE = """
                 </div>
             </div>
 
-            <!-- CENTER: SERVER LIST -->
             <div class="main-content">
                 <div class="panel" style="border-left-color: var(--cyan);">
                     <div style="display:flex; justify-content:space-between; align-items:center; border-bottom: 2px solid var(--cyan); margin-bottom: 15px; padding-bottom:5px;">
@@ -351,7 +346,6 @@ HTML_TEMPLATE = """
                 </div>
             </div>
 
-            <!-- RIGHT: LOGS -->
             <div class="right-bar">
                 <div class="panel">
                     <h2>EVENT_LOGS</h2>
@@ -560,7 +554,7 @@ def manage_owner():
             json.dump(data, f, indent=4)
             
     except Exception as e:
-        log_action(f"Owner config error: {e}")
+        log_action(f"Owner config config error: {e}")
 
     return redirect('/dashboard')
 
@@ -578,4 +572,7 @@ def bot_action():
 def run_flask(bot):
     global bot_instance
     bot_instance = bot
-    app.run(host='0.0.0.0', port=8080)
+    
+    # [FIXED] Use PORT from Render (Environment Variable)
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
