@@ -8,6 +8,7 @@ import re
 import asyncio
 import aiohttp
 import traceback
+import time
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import MESSAGES, load_data, save_data, is_admin_or_has_permission, get_files_from_urls, init_guild_data
@@ -16,6 +17,57 @@ class AuctionSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.active_auctions = {}
+
+        # Debounce bid status updates to avoid hitting Discord rate limits during rapid bidding
+        self._status_update_tasks: dict[int, asyncio.Task] = {}
+        self._status_update_delay_sec = 1.25
+        self._no_ping_mentions = discord.AllowedMentions(users=False, roles=False, everyone=False)
+
+    def _schedule_status_update(self, channel_id: int) -> None:
+        # Debounce: if bids keep coming, cancel the pending update and reschedule.
+        task = self._status_update_tasks.get(channel_id)
+        if task and not task.done():
+            task.cancel()
+        self._status_update_tasks[channel_id] = self.bot.loop.create_task(self._flush_status_update(channel_id))
+
+    async def _flush_status_update(self, channel_id: int) -> None:
+        try:
+            # Batch multiple bids that arrive close together into a single edit.
+            await asyncio.sleep(self._status_update_delay_sec)
+
+            auction_data = self.active_auctions.get(channel_id)
+            if not auction_data:
+                return
+
+            text = auction_data.pop('pending_status_text', None)
+            if not text:
+                return
+
+            channel = self.bot.get_channel(channel_id)
+            if not channel:
+                return
+
+            status_msg_id = auction_data.get('status_msg_id')
+            try:
+                if status_msg_id:
+                    await channel.get_partial_message(int(status_msg_id)).edit(
+                        content=text,
+                        allowed_mentions=self._no_ping_mentions,
+                    )
+                else:
+                    msg = await channel.send(text, allowed_mentions=self._no_ping_mentions)
+                    auction_data['status_msg_id'] = msg.id
+                    await self.save_active_auctions()
+            except discord.NotFound:
+                # If the old status message was deleted, recreate it.
+                msg = await channel.send(text, allowed_mentions=self._no_ping_mentions)
+                auction_data['status_msg_id'] = msg.id
+                await self.save_active_auctions()
+            except discord.HTTPException as e:
+                print(f"⚠️ Status update failed for channel {channel_id}: {e}")
+        except asyncio.CancelledError:
+            # New bid arrived; a newer update has been scheduled.
+            return
     
     async def cog_load(self):
         self.bot.loop.create_task(self.restore_auction_views())
@@ -59,6 +111,8 @@ class AuctionSystem(commands.Cog):
             serializable_auctions = {}
             for cid, adata in self.active_auctions.items():
                 copy_data = adata.copy()
+                # runtime-only keys (avoid bloating data.json)
+                copy_data.pop('pending_status_text', None)
                 if isinstance(copy_data.get('end_time'), datetime.datetime):
                     copy_data['end_time_ts'] = copy_data['end_time'].timestamp()
                     copy_data['end_time'] = copy_data['end_time'].isoformat()
@@ -133,15 +187,17 @@ class AuctionSystem(commands.Cog):
                     if is_autobuy:
                         response_text += MESSAGES["auc_bid_autobuy"]
                         auction_data['end_time'] = datetime.datetime.now()
-                    
-                    if auction_data.get('last_bid_msg_id'):
-                        try: 
-                            old_msg = await message.channel.fetch_message(auction_data['last_bid_msg_id'])
-                            await old_msg.delete()
-                        except: pass
-                    
-                    sent_msg = await message.reply(response_text)
-                    auction_data['last_bid_msg_id'] = sent_msg.id
+
+                    # Update a single status message (edited), instead of sending/deleting messages for every bid.
+                    # This dramatically reduces REST requests and avoids frequent rate limit hits.
+                    auction_data['pending_status_text'] = response_text
+                    self._schedule_status_update(message.channel.id)
+
+                    # Optional: add a light confirmation without extra messages
+                    try:
+                        await message.add_reaction("✅")
+                    except:
+                        pass
                     
                     await self.save_active_auctions()
                     
@@ -184,9 +240,9 @@ class AuctionSystem(commands.Cog):
         winner_id, seller_id = auction_data['winner_id'], auction_data['seller_id']
         
         try:
-            msg = await channel.fetch_message(auction_data['message_id'])
-            await msg.edit(view=None)
-        except: pass
+            await channel.get_partial_message(int(auction_data['message_id'])).edit(view=None)
+        except:
+            pass
 
         if winner_id is None:
             if auction_data.get('log_id'):
@@ -219,9 +275,7 @@ class AuctionSystem(commands.Cog):
         
         try: await winner_msg.delete()
         except: pass
-        if auction_data.get('last_bid_msg_id'):
-            try: await (await channel.fetch_message(auction_data['last_bid_msg_id'])).delete()
-            except: pass
+        # No longer deleting per-bid reply messages (we use a single edited status message).
 
         embed = discord.Embed(description=MESSAGES["auc_lock_msg"].format(winner=winner_mention), color=discord.Color.green())
         embed.add_field(name="ปุ่มสำหรับผู้เปิดประมูล", value="ด้านล่าง")
@@ -507,14 +561,30 @@ class ApprovalView(discord.ui.View):
         
         files_to_send = await get_files_from_urls(self.auction_data["img_product_urls"])
         view = AuctionControlView(self.auction_data['seller_id'], self.cog)
+
+        # IMPORTANT: store the correct message id that actually contains the view
         if files_to_send:
-            await auction_channel.send(files=files_to_send, view=view)
-            msg_id = embed_msg.id
+            control_msg = await auction_channel.send(files=files_to_send, view=view)
+            msg_id = control_msg.id
         else:
             await embed_msg.edit(view=view)
             msg_id = embed_msg.id
-        
-        self.auction_data.update({'channel_id': auction_channel.id, 'current_price': self.auction_data['start_price'],'end_time': end_time, 'winner_id': None, 'message_id': msg_id, 'active': True, 'last_bid_msg_id': None})
+
+        # Create a single "bid status" message that will be edited as bids come in.
+        status_msg = await auction_channel.send(
+            f"📈 ราคาเริ่มต้น: `{self.auction_data['start_price']:,} บ.`\n"
+            f"พิมพ์ `up <จำนวนเงิน>` เพื่อบิด (เช่น `up 1500`)"
+        )
+
+        self.auction_data.update({
+            'channel_id': auction_channel.id,
+            'current_price': self.auction_data['start_price'],
+            'end_time': end_time,
+            'winner_id': None,
+            'message_id': msg_id,
+            'status_msg_id': status_msg.id,
+            'active': True,
+        })
         self.cog.active_auctions[auction_channel.id] = self.auction_data
         
         await self.cog.save_active_auctions()
