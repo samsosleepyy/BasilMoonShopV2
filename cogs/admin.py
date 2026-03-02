@@ -8,7 +8,6 @@ import asyncio
 import io
 import resource
 import json
-import time
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -17,10 +16,6 @@ from config import MESSAGES, load_data, save_data, is_admin_or_has_permission, i
 class AdminSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        # Anti-raid (audit log) calls are REST-heavy. When webhooks update events burst,
-        # this cooldown prevents spamming `guild.audit_logs()` and hitting rate limits.
-        self._antiraid_last_check: dict[int, float] = {}
-        self._antiraid_cooldown_sec = 2.0
         self.autobackup_task.start()
 
     def cog_unload(self):
@@ -216,13 +211,6 @@ class AdminSystem(commands.Cog):
         if "guilds" not in data or guild_id not in data["guilds"]: return
         ar_config = data["guilds"][guild_id].get("antiraid", {"status": False})
         if not ar_config["status"]: return
-
-        # Cooldown per guild to avoid rate limiting on audit log endpoint
-        now = time.monotonic()
-        last = self._antiraid_last_check.get(guild.id, 0.0)
-        if (now - last) < self._antiraid_cooldown_sec:
-            return
-        self._antiraid_last_check[guild.id] = now
         try:
             async for entry in guild.audit_logs(limit=1, action=discord.AuditLogAction.webhook_create):
                 if (datetime.datetime.now(datetime.timezone.utc) - entry.created_at).total_seconds() > 10: return

@@ -6,6 +6,8 @@ import os
 import datetime
 import asyncio
 import json
+import aiohttp
+import re
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import MESSAGES, load_data, save_data, is_admin_or_has_permission
@@ -108,6 +110,186 @@ class TicketSystemV2(commands.Cog):
 
                     view = RushConfirmView(chan_id)
                     await message.reply(f"{owner_ping}🧾 **ได้รับสลิปแล้ว**\nแอดมินโปรดตรวจสอบและกดปุ่มด้านล่างเพื่อยืนยันการเร่งงาน", view=view)
+
+# =========================
+# Helpers: Rush Queue
+# =========================
+def _build_admin_pings(guild: discord.Guild, data: dict, guild_id: str):
+    pings = []
+    try:
+        if "guilds" in data and guild_id in data["guilds"]:
+            target_ids = set(data["guilds"][guild_id].get("admins", []) + data["guilds"][guild_id].get("supports", []))
+        else:
+            target_ids = set()
+        for target_id in target_ids:
+            role = guild.get_role(target_id)
+            if role:
+                pings.append(role.mention)
+            else:
+                pings.append(f"<@{target_id}>")
+    except:
+        pass
+    return pings
+
+def _is_valid_truemoney_gift_link(link: str) -> bool:
+    # ตัวอย่าง: https://gift.truemoney.com/campaign/?v=XXXX
+    link = link.strip()
+    if not (link.startswith("http://") or link.startswith("https://")):
+        return False
+    if "gift.truemoney.com" not in link:
+        return False
+    if "campaign" not in link:
+        return False
+    return True
+
+async def _try_truemoney_api_redeem(link: str, phone: str | None):
+    """
+    ยืนยัน/รับซองอั่งเปา TrueMoney เพื่ออัปคิวอัตโนมัติ
+
+    ลำดับการทำงาน:
+    1) ถ้ามี ENV TRUEWALLET_API_URL + TRUEWALLET_API_KEY -> เรียก API ภายนอกของคุณก่อน (กรณีคุณมี service ของตัวเอง)
+    2) ถ้าไม่มี -> จะลองยิง TrueMoney Gift redeem endpoint ตรง ๆ (ต้องมี phone ผู้รับ)
+
+    คืนค่า:
+      (ok: bool, amount_baht: int|None, error_code: str|None)
+    """
+
+    def _extract_hash(url: str) -> str | None:
+        url = url.strip()
+        # รูปแบบหลัก: https://gift.truemoney.com/campaign/?v=HASH
+        m = re.search(r"[?&]v=([a-zA-Z0-9]+)", url)
+        if m:
+            return m.group(1)
+        # บางทีเป็น /campaign/?v=... หรือมี query อื่น ๆ
+        return None
+
+    # 1) เรียก API ภายนอก (ถ้าตั้งไว้)
+    api_url = os.getenv("TRUEWALLET_API_URL", "").strip()
+    api_key = os.getenv("TRUEWALLET_API_KEY", "").strip()
+    if api_url and api_key:
+        payload = {"link": link}
+        if phone:
+            payload["phone"] = phone
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    api_url,
+                    json=payload,
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    timeout=aiohttp.ClientTimeout(total=20),
+                ) as resp:
+                    if resp.status != 200:
+                        return (False, None, f"HTTP_{resp.status}")
+                    data = await resp.json(content_type=None)
+                    if isinstance(data, dict) and (data.get("success") or data.get("ok") or data.get("status") in ["success", True]):
+                        amt = None
+                        try:
+                            amt = int(data.get("amount") or data.get("amount_baht") or 0) or None
+                        except:
+                            amt = None
+                        return (True, amt, None)
+                    code = None
+                    if isinstance(data, dict):
+                        code = data.get("code") or data.get("error") or data.get("status")
+                    return (False, None, str(code) if code else "API_REJECTED")
+        except Exception as e:
+            print(f"TrueWallet external API error: {e}")
+            # ถ้า API ภายนอกล้ม ให้ลอง direct ต่อ (ถ้ามี phone)
+            pass
+
+    # 2) ยิง TrueMoney Gift โดยตรง (ต้องมี phone)
+    if not phone:
+        return (False, None, "MISSING_PHONE")
+
+    voucher_hash = _extract_hash(link)
+    if not voucher_hash:
+        return (False, None, "INVALID_LINK")
+
+    url = f"https://gift.truemoney.com/campaign/vouchers/{voucher_hash}/redeem"
+    payload = {"mobile": phone, "voucher_hash": voucher_hash}
+    headers = {"Content-Type": "application/json", "Accept": "application/json"}
+
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20)) as session:
+            async with session.post(url, json=payload, headers=headers) as response:
+                # TrueMoney บางครั้งตอบเป็น text/json ผสม
+                data = await response.json(content_type=None)
+                status_code = None
+                if isinstance(data, dict):
+                    status_code = (data.get("status") or {}).get("code") or data.get("code")
+
+                if status_code == "SUCCESS":
+                    amount = None
+                    try:
+                        amount = int(data["data"]["my_ticket"]["amount_baht"])
+                    except Exception:
+                        amount = None
+                    return (True, amount, None)
+
+                # กรณี error ที่พบบ่อย
+                if status_code:
+                    return (False, None, status_code)
+
+                return (False, None, "UNKNOWN_RESPONSE")
+    except aiohttp.ClientResponseError as e:
+        return (False, None, f"HTTP_{e.status}")
+    except Exception as e:
+        print(f"TrueWallet direct redeem error: {e}")
+        return (False, None, "REQUEST_FAILED")
+    """
+    api_url = os.getenv("TRUEWALLET_API_URL", "").strip()
+    api_key = os.getenv("TRUEWALLET_API_KEY", "").strip()
+    if not api_url or not api_key:
+        return False
+
+    payload = {"link": link}
+    if phone:
+        payload["phone"] = phone
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(api_url, json=payload, headers={"Authorization": f"Bearer {api_key}"}, timeout=20) as resp:
+                if resp.status != 200:
+                    return False
+                data = await resp.json(content_type=None)
+                # รองรับหลายรูปแบบ response
+                if isinstance(data, dict):
+                    return bool(data.get("success") or data.get("ok") or data.get("status") in ["success", True])
+    except Exception as e:
+        print(f"TrueWallet API error: {e}")
+    return False
+
+async def _apply_rush_queue(interaction: discord.Interaction, data: dict, main_msg_id: int, type_idx: int, channel_override: discord.TextChannel | None = None):
+    """
+    อัปคิวเร่งงาน: เพิ่มตัวนับ rush_queue ของกิลด์, เปลี่ยนชื่อห้อง, ตั้ง is_rushing
+    """
+    channel = channel_override or interaction.channel
+    guild_id = str(interaction.guild_id)
+
+    if "guilds" not in data or guild_id not in data["guilds"]:
+        return
+
+    if "rush_queue" not in data["guilds"][guild_id]:
+        data["guilds"][guild_id]["rush_queue"] = 0
+    data["guilds"][guild_id]["rush_queue"] += 1
+    count = data["guilds"][guild_id]["rush_queue"]
+
+    # mark ticket rushing
+    if "active_tickets_v2" in data and str(channel.id) in data["active_tickets_v2"]:
+        data["active_tickets_v2"][str(channel.id)]["is_rushing"] = True
+        data["active_tickets_v2"][str(channel.id)]["rush_method"] = "auto_or_admin"
+
+    # เปลี่ยนชื่อช่อง (กันยาวเกิน)
+    base_name = channel.name.split("-เร่ง-")[0]
+    new_name = f"{base_name}-เร่ง-{count}"
+    if len(new_name) > 95:
+        new_name = new_name[:95]
+    try:
+        await channel.edit(name=new_name)
+    except Exception as e:
+        print(f"Rename rush channel failed: {e}")
+
+    await channel.send(f"🚨 **เร่งงานสำเร็จ!** (ลำดับที่ {count})")
 
 async def setup(bot):
     await bot.add_cog(TicketSystemV2(bot))
@@ -349,11 +531,15 @@ class PriceConfigModal(discord.ui.Modal, title="ตั้งค่าการ�
 
         self.rush_price = discord.ui.TextInput(label="ราคาเร่ง (บาท) [ไม่บังคับ]", placeholder="เว้นว่างถ้าไม่ต้องการให้เร่งได้", default=rush_val, required=False)
         self.pay_img = discord.ui.TextInput(label="ลิ้งค์รูปชำระเงิน (QR) [ไม่บังคับ]", default=pay_val, required=False)
+
+        tw_phone_val = btn_data.get("truemoney_wallet_phone", "") or ""
+        self.truemoney_wallet_phone = discord.ui.TextInput(label="เบอร์ TrueMoney Wallet (ไม่บังคับ)", placeholder="เช่น 0800000000", default=str(tw_phone_val), required=False)
         self.owner_id = discord.ui.TextInput(label="ไอดีเจ้าของตั๋ว (User ID)", default=str(btn_data.get("owner_id", "")), required=True)
         self.emoji_inp = discord.ui.TextInput(label="อีโมจิ (Emoji)", placeholder="เช่น 🎫, 🔧", required=False, default=btn_data.get("emoji", ""))
         
         self.add_item(self.rush_price)
         self.add_item(self.pay_img)
+        self.add_item(self.truemoney_wallet_phone)
         self.add_item(self.owner_id)
         self.add_item(self.emoji_inp)
 
@@ -369,6 +555,7 @@ class PriceConfigModal(discord.ui.Modal, title="ตั้งค่าการ�
         cache["buttons"][self.index].update({
             "rush_price": rush_val,
             "pay_img": self.pay_img.value if self.pay_img.value.strip() else None,
+            "truemoney_wallet_phone": self.truemoney_wallet_phone.value.strip() if self.truemoney_wallet_phone.value.strip() else None,
             "owner_id": int(self.owner_id.value),
             "emoji": self.emoji_inp.value if self.emoji_inp.value else None
         })
@@ -465,7 +652,13 @@ async def handle_ticket_creation(interaction, msg_id, type_idx):
         interaction.user: discord.PermissionOverwrite(read_messages=True),
         interaction.guild.me: discord.PermissionOverwrite(read_messages=True)
     }
-    owner_member = interaction.guild.get_member(btn_conf["owner_id"])
+    # Backward compatible: older configs may not have "owner_id"
+    owner_id = btn_conf.get("owner_id")
+    if not owner_id:
+        # Try reading from the main config block, otherwise fallback to guild owner
+        main_cfg = data.get("ticket_v2_configs", {}).get(msg_id, {})
+        owner_id = main_cfg.get("owner_id") or interaction.guild.owner_id
+    owner_member = interaction.guild.get_member(owner_id) if owner_id else None
     if owner_member:
         overwrites[owner_member] = discord.PermissionOverwrite(read_messages=True)
         
@@ -477,7 +670,7 @@ async def handle_ticket_creation(interaction, msg_id, type_idx):
     
     view = TicketInsideView(msg_id, type_idx)
     
-    owner_ping = f"<@{btn_conf['owner_id']}> " if btn_conf.get("owner_id") else ""
+    owner_ping = f"<@{owner_id}> " if owner_id else ""
     msg_content = f"{interaction.user.mention} {owner_ping}"
     
     await channel.send(content=msg_content, embed=embed, view=view)
@@ -563,30 +756,31 @@ class TicketInsideView(discord.ui.View):
         self.type_idx = type_idx
         self.check_and_add_buttons()
 
-    def check_and_add_buttons(self):
-        close_btn = discord.ui.Button(label="ปิดตั๋ว (Admin)", style=discord.ButtonStyle.red, custom_id="tkv2_close")
-        close_btn.callback = self.close_ticket
-        self.add_item(close_btn)
+def check_and_add_buttons(self):
+    # ปุ่มปิดตั๋ว (แอดมิน)
+    close_btn = discord.ui.Button(label="ปิดตั๋ว (Admin)", style=discord.ButtonStyle.red, custom_id="tkv2_close")
+    close_btn.callback = self.close_ticket
+    self.add_item(close_btn)
 
-        data = load_data()
-        try:
-            str_main_msg_id = str(self.main_msg_id)
-            str_type_idx = str(self.type_idx)
-            
-            if str_main_msg_id in data["ticket_v2_configs"]:
-                config = data["ticket_v2_configs"][str_main_msg_id]["buttons"]
-                btn_conf = config.get(str_type_idx) or config.get(int(str_type_idx))
-                
-                if btn_conf:
-                    rush_price = btn_conf.get("rush_price", 0)
-                    pay_img = btn_conf.get("pay_img")
-                    
-                    if rush_price and rush_price > 0 and pay_img:
-                        rush_btn = discord.ui.Button(label="เร่งงาน 🔥", style=discord.ButtonStyle.primary, custom_id="tkv2_rush")
-                        rush_btn.callback = self.rush_work
-                        self.add_item(rush_btn)
-        except Exception as e:
-            print(f"Error checking rush button: {e}")
+    # ถ้ามีการตั้งค่าเร่งงาน ให้แสดง Select Menu เพื่อเลือกช่องทางชำระ
+    data = load_data()
+    try:
+        str_main_msg_id = str(self.main_msg_id)
+        str_type_idx = str(self.type_idx)
+
+        if str_main_msg_id in data.get("ticket_v2_configs", {}):
+            config = data["ticket_v2_configs"][str_main_msg_id]["buttons"]
+            btn_conf = config.get(str_type_idx) or config.get(int(str_type_idx))
+
+            if btn_conf:
+                rush_price = btn_conf.get("rush_price", 0) or 0
+                promptpay_img = btn_conf.get("pay_img")
+                tw_phone = btn_conf.get("truemoney_wallet_phone")
+
+                if rush_price > 0 and (promptpay_img or tw_phone):
+                    self.add_item(RushMethodSelect(self.main_msg_id, self.type_idx))
+    except Exception as e:
+        print(f"Error checking rush select: {e}")
 
     async def close_ticket(self, interaction: discord.Interaction):
         if not is_admin_or_has_permission(interaction): 
@@ -610,37 +804,206 @@ class TicketInsideView(discord.ui.View):
                 data["guilds"][str(target_guild_id)]["rush_queue"] = 0
         
         save_data(data)
-
     async def rush_work(self, interaction: discord.Interaction):
-        data = load_data()
-        config = data["ticket_v2_configs"][str(self.main_msg_id)]["buttons"]
-        
-        key = str(self.type_idx) if str(self.type_idx) in config else self.type_idx
-        btn_conf = config[key]
-        
-        price = btn_conf["rush_price"]
-        img_url = btn_conf["pay_img"]
-        embed = discord.Embed(title="🔥 บริการเร่งงาน", description=f"ค่าบริการ: **{price} บาท**\nโปรดโอนเงินและส่งสลิปในห้องนี้", color=discord.Color.orange())
-        embed.set_image(url=img_url)
-        view = RushPaymentView()
-        msg = await interaction.channel.send(embed=embed, view=view)
-        
-        if str(interaction.channel.id) in data["active_tickets_v2"]:
-            data["active_tickets_v2"][str(interaction.channel.id)]["is_rushing"] = True
-            data["active_tickets_v2"][str(interaction.channel.id)]["rush_msg_id"] = msg.id
-            save_data(data)
-        await interaction.response.defer()
+        # Deprecated: ระบบเร่งงานเปลี่ยนเป็น Select Menu แล้ว
+        await interaction.response.send_message("โปรดใช้เมนู **เร่งงาน** เพื่อเลือกช่องทางชำระเงินครับ", ephemeral=True)
 
-class RushPaymentView(discord.ui.View):
-    def __init__(self):
+class RushMethodSelect(discord.ui.Select):
+    """Select Menu สำหรับเลือกช่องทางชำระเงินเร่งคิว"""
+    def __init__(self, main_msg_id: int, type_idx: int):
+        self.main_msg_id = main_msg_id
+        self.type_idx = type_idx
+
+        options = [
+            discord.SelectOption(
+                label="TrueMoney Wallet (อั่งเปา)",
+                value="truewallet",
+                description="วางลิ้งค์อั่งเปาเพื่ออัปคิวอัตโนมัติ",
+                emoji="🟠"
+            ),
+            discord.SelectOption(
+                label="QR Code PromptPay",
+                value="promptpay",
+                description="โอนผ่านพร้อมเพย์ แล้วกดปุ่มโอนเสร็จสิ้น",
+                emoji="🟦"
+            ),
+        ]
+        super().__init__(
+            placeholder="🔥 เลือกช่องทางเร่งคิว...",
+            options=options,
+            min_values=1,
+            max_values=1,
+            custom_id=f"tkv2_rush_select:{main_msg_id}:{type_idx}",
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        data = load_data()
+        str_main = str(self.main_msg_id)
+        conf = data.get("ticket_v2_configs", {}).get(str_main, {}).get("buttons", {})
+        key = str(self.type_idx) if str(self.type_idx) in conf else self.type_idx
+        btn_conf = conf.get(key, {})
+
+        price = int(btn_conf.get("rush_price", 0) or 0)
+        promptpay_img = btn_conf.get("pay_img")
+        tw_phone = btn_conf.get("truemoney_wallet_phone")
+
+        if price <= 0:
+            return await interaction.response.send_message("❌ ยังไม่ได้ตั้งค่าราคาเร่งงาน", ephemeral=True)
+
+        if self.values[0] == "promptpay":
+            if not promptpay_img:
+                return await interaction.response.send_message("❌ ยังไม่ได้ตั้งค่ารูป QR PromptPay", ephemeral=True)
+
+            embed = discord.Embed(
+                title="🟦 เร่งคิวด้วย PromptPay",
+                description=f"ยอดที่ต้องชำระ: **{price} บาท**\n\nโอนผ่าน QR แล้วกดปุ่ม **โอนเสร็จสิ้น** ด้านล่าง",
+                color=discord.Color.blue()
+            )
+            embed.set_image(url=promptpay_img)
+            view = PromptPayDoneView(self.main_msg_id, self.type_idx)
+            await interaction.response.send_message(embed=embed, view=view)
+
+        elif self.values[0] == "truewallet":
+            if not tw_phone:
+                # ยังไม่ได้ตั้งค่าเบอร์ แต่ยังให้ลองได้ (บาง API ไม่ต้องใช้เบอร์)
+                pass
+            await interaction.response.send_modal(TrueWalletAngpaoModal(self.main_msg_id, self.type_idx))
+
+
+class PromptPayDoneView(discord.ui.View):
+    def __init__(self, main_msg_id: int, type_idx: int):
         super().__init__(timeout=None)
-    @discord.ui.button(label="ยกเลิก", style=discord.ButtonStyle.secondary)
+        self.main_msg_id = main_msg_id
+        self.type_idx = type_idx
+
+    @discord.ui.button(label="โอนเสร็จสิ้น ✅", style=discord.ButtonStyle.success, custom_id="tkv2_promptpay_done")
+    async def done(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # แจ้งแอดมิน + ให้รอตรวจสอบ
+        await interaction.response.send_message("✅ แจ้งเตือนไปที่แอดมินแล้ว กรุณารอการตอบกลับครับ", ephemeral=True)
+
+        data = load_data()
+        guild_id = str(interaction.guild_id)
+        str_main = str(self.main_msg_id)
+
+        conf = data.get("ticket_v2_configs", {}).get(str_main, {})
+        btns = conf.get("buttons", {})
+        key = str(self.type_idx) if str(self.type_idx) in btns else self.type_idx
+        btn_conf = btns.get(key, {})
+        price = int(btn_conf.get("rush_price", 0) or 0)
+
+        pings = _build_admin_pings(interaction.guild, data, guild_id)
+        content = f"{' '.join(pings)}\n🚨 มีผู้ใช้กด **โอนเสร็จสิ้น (PromptPay)**\nห้อง: {interaction.channel.mention}\nยอด: **{price} บาท**"
+
+        # ส่งไป log_channel ถ้ามี
+        log_id = conf.get("log_channel_id")
+        target_chan = None
+        if log_id:
+            target_chan = interaction.guild.get_channel(int(log_id))
+        if target_chan is None:
+            target_chan = interaction.channel
+
+        await target_chan.send(content, view=AdminRushApproveView(interaction.channel.id, self.main_msg_id, self.type_idx))
+
+    @discord.ui.button(label="ยกเลิก", style=discord.ButtonStyle.secondary, custom_id="tkv2_promptpay_cancel")
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.message.delete()
+
+
+class TrueWalletAngpaoModal(discord.ui.Modal, title="TrueMoney Wallet - ลิ้งค์อั่งเปา"):
+    def __init__(self, main_msg_id: int, type_idx: int):
+        super().__init__(timeout=None)
+        self.main_msg_id = main_msg_id
+        self.type_idx = type_idx
+
+        self.angpao_link = discord.ui.TextInput(
+            label="วางลิ้งค์อั่งเปา (TrueMoney Gift)",
+            placeholder="เช่น https://gift.truemoney.com/campaign/?v=...",
+            required=True
+        )
+        self.add_item(self.angpao_link)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        link = self.angpao_link.value.strip()
+
+        if not _is_valid_truemoney_gift_link(link):
+            return await interaction.response.send_message("❌ ลิ้งค์อั่งเปาไม่ถูกต้อง กรุณาตรวจสอบอีกครั้ง", ephemeral=True)
+
+        await interaction.response.defer(ephemeral=True)
+
         data = load_data()
-        if str(interaction.channel.id) in data["active_tickets_v2"]:
-            data["active_tickets_v2"][str(interaction.channel.id)]["is_rushing"] = False
+        str_main = str(self.main_msg_id)
+        guild_id = str(interaction.guild_id)
+
+        conf = data.get("ticket_v2_configs", {}).get(str_main, {})
+        btns = conf.get("buttons", {})
+        key = str(self.type_idx) if str(self.type_idx) in btns else self.type_idx
+        btn_conf = btns.get(key, {})
+
+        price = int(btn_conf.get("rush_price", 0) or 0)
+        tw_phone = btn_conf.get("truemoney_wallet_phone")
+
+        # พยายามตรวจสอบ/รับเงินผ่าน API ถ้าตั้งค่าไว้ (ENV)
+        api_ok, amount_baht, err_code = await _try_truemoney_api_redeem(link, tw_phone)
+
+        if api_ok:
+            await _apply_rush_queue(interaction, data, self.main_msg_id, self.type_idx)
             save_data(data)
+            msg = "✅ ยืนยันอั่งเปาสำเร็จ! อัปคิวเร่งงานให้อัตโนมัติแล้วครับ"
+            if amount_baht is not None:
+                msg = f"✅ ทำรายการสำเร็จ! ได้รับเงินจำนวน {amount_baht} บาท และอัปคิวให้อัตโนมัติแล้วครับ"
+            return await interaction.followup.send(msg, ephemeral=True)
+
+        # ถ้าเป็น error ชัดเจนจากระบบ TrueMoney ให้แจ้งผู้ใช้ทันที ไม่ต้องส่งแอดมิน
+        if err_code in ["VOUCHER_OUT_OF_STOCK", "VOUCHER_EXPIRED", "TARGET_USER_NOT_FOUND"]:
+            mapping = {
+                "VOUCHER_OUT_OF_STOCK": "❌ ไม่สามารถรับได้: ซองอั่งเปานี้ถูกรับไปหมดแล้ว",
+                "VOUCHER_EXPIRED": "❌ ไม่สามารถรับได้: ซองอั่งเปานี้หมดอายุแล้ว",
+                "TARGET_USER_NOT_FOUND": "❌ ไม่สามารถรับได้: เบอร์โทรศัพท์ผู้รับไม่ถูกต้อง (ตรวจสอบเบอร์ TrueMoney ในหน้า setup)",
+            }
+            return await interaction.followup.send(mapping.get(err_code, f"❌ เกิดข้อผิดพลาดจากระบบ: {err_code}"), ephemeral=True)
+
+        # ถ้าไม่สามารถยืนยันด้วย API -> แจ้งแอดมินแทน
+        pings = _build_admin_pings(interaction.guild, data, guild_id)
+        content = f"{' '.join(pings)}\n🟠 มีผู้ใช้ส่ง **ลิ้งค์อั่งเปา TrueMoney**\nห้อง: {interaction.channel.mention}\nยอดคาดหวัง: **{price} บาท**\nลิ้งค์: {link}"
+        log_id = conf.get("log_channel_id")
+        target_chan = interaction.guild.get_channel(int(log_id)) if log_id else None
+        if target_chan is None:
+            target_chan = interaction.channel
+
+        await target_chan.send(content, view=AdminRushApproveView(interaction.channel.id, self.main_msg_id, self.type_idx))
+        return await interaction.followup.send("✅ ส่งให้แอดมินตรวจสอบแล้ว กรุณารอการตอบกลับครับ", ephemeral=True)
+
+
+class AdminRushApproveView(discord.ui.View):
+    """ปุ่มให้แอดมินกดยืนยันการเร่งคิว (กรณี PromptPay/TrueWallet ที่ตรวจสอบอัตโนมัติไม่ได้)"""
+    def __init__(self, chan_id: int, main_msg_id: int, type_idx: int):
+        super().__init__(timeout=None)
+        self.chan_id = chan_id
+        self.main_msg_id = main_msg_id
+        self.type_idx = type_idx
+
+    @discord.ui.button(label="ยืนยันเร่งคิว ✅ (Admin)", style=discord.ButtonStyle.success, custom_id="tkv2_admin_rush_approve")
+    async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not is_admin_or_has_permission(interaction):
+            return await interaction.response.send_message(MESSAGES["no_permission"], ephemeral=True)
+
+        await interaction.response.defer(ephemeral=True)
+
+        data = load_data()
+        channel = interaction.guild.get_channel(self.chan_id)
+        if channel is None:
+            return await interaction.followup.send("❌ ไม่พบห้องตั๋วนี้แล้ว", ephemeral=True)
+
+        # สร้าง context interaction ให้ใช้ฟังก์ชันเดียวกัน
+        class _Tmp:
+            guild_id = interaction.guild_id
+            guild = interaction.guild
+            channel = channel
+
+        # ใช้ apply เดียวกัน
+        await _apply_rush_queue(interaction, data, self.main_msg_id, self.type_idx, channel_override=channel)
+        save_data(data)
+        await interaction.followup.send("✅ ยืนยันและอัปคิวเรียบร้อย", ephemeral=True)
 
 class RushConfirmView(discord.ui.View):
     def __init__(self, chan_id):
