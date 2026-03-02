@@ -287,7 +287,7 @@ HTML_TEMPLATE = """
                 <div class="panel">
                     <h2>ADMIN_LIST</h2>
                     <form action="/manage_owner" method="POST" style="display:flex; gap:5px; margin-bottom: 10px;">
-	                        <input type="text" name="user_id" placeholder="USER ID ONLY" pattern="\\d+" title="กรุณากรอกตัวเลขเท่านั้น" class="cyber-input" style="text-align:left; font-size:0.9rem;" required>
+                        <input type="text" name="user_id" placeholder="USER ID ONLY" pattern="\d+" title="กรุณากรอกตัวเลขเท่านั้น" class="cyber-input" style="text-align:left; font-size:0.9rem;" required>
                         <button name="op" value="add" class="tiny-btn" style="color:lime; border-color:lime;">ADD</button>
                     </form>
                     <div style="max-height: 200px; overflow-y: auto;">

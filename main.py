@@ -4,7 +4,6 @@ import os
 import threading
 import json
 import logging
-
 # Import Web Dashboard
 from web_dashboard import run_flask
 
@@ -17,37 +16,28 @@ else:
     with open("data.json", "w", encoding="utf-8") as f:
         json.dump(data, f)
 
-token = os.environ.get("TOKEN")
-if not token:
-    raise RuntimeError(
-        "Missing TOKEN environment variable. "
-        "For safety, the bot token must be provided via environment variables only."
-    )
+token = os.environ.get("TOKEN") or "MTQ0Mzc4NTU4MTM2MzQ2MjE2NA.GlBD0S.0XKGaCq8FGPym4s8v_1M3GyTJdwhDJOJ--EHqI" # ใส่ Token ของคุณถ้าเทสในเครื่อง
 
 # --- Bot Setup ---
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True # จำเป็นสำหรับดู Member Count
 
-class BasilBot(commands.Bot):
-    async def setup_hook(self) -> None:
-        # Load cogs once at startup (avoids re-loading on reconnect, which can duplicate tasks)
-        for filename in os.listdir('./cogs'):
-            if filename.endswith('.py'):
-                try:
-                    await self.load_extension(f'cogs.{filename[:-3]}')
-                    print(f"Loaded {filename}")
-                except Exception as e:
-                    print(f"Failed to load {filename}: {e}")
-
-
-bot = BasilBot(command_prefix="!", intents=intents)
+bot = commands.Bot(command_prefix="!", intents=intents)
 
 # --- Events ---
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user} (ID: {bot.user.id})")
     print("------")
+    # Load Cogs
+    for filename in os.listdir('./cogs'):
+        if filename.endswith('.py'):
+            try:
+                await bot.load_extension(f'cogs.{filename[:-3]}')
+                print(f"Loaded {filename}")
+            except Exception as e:
+                print(f"Failed to load {filename}: {e}")
 
 # --- Start Web Server in Background ---
 def start_web():
@@ -55,7 +45,7 @@ def start_web():
 
 if __name__ == '__main__':
     # รัน Flask ใน Thread แยก เพื่อไม่ให้บล็อค Discord Bot
-    t = threading.Thread(target=start_web, daemon=True)
+    t = threading.Thread(target=start_web)
     t.start()
     
     bot.run(token)
