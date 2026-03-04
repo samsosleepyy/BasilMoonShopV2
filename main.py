@@ -16,28 +16,39 @@ else:
     with open("data.json", "w", encoding="utf-8") as f:
         json.dump(data, f)
 
-token = os.environ.get("TOKEN") or "MTQ0Mzc4NTU4MTM2MzQ2MjE2NA.GlBD0S.0XKGaCq8FGPym4s8v_1M3GyTJdwhDJOJ--EHqI" # ใส่ Token ของคุณถ้าเทสในเครื่อง
+# ใส่ Token ของคุณ
+token = os.environ.get("TOKEN") or "YOUR_TOKEN_HERE"
 
 # --- Bot Setup ---
-intents = discord.Intents.default()
-intents.message_content = True
-intents.members = True # จำเป็นสำหรับดู Member Count
+class MyBot(commands.Bot):
+    def __init__(self):
+        intents = discord.Intents.default()
+        intents.message_content = True
+        intents.members = True # จำเป็นสำหรับดู Member Count
+        super().__init__(command_prefix="!", intents=intents)
 
-bot = commands.Bot(command_prefix="!", intents=intents)
+    # ฟังก์ชันนี้จะทำงานก่อนที่บอทจะล็อกอิน
+    async def setup_hook(self):
+        # Load Cogs
+        for filename in os.listdir('./cogs'):
+            if filename.endswith('.py'):
+                try:
+                    await self.load_extension(f'cogs.{filename[:-3]}')
+                    print(f"Loaded {filename}")
+                except Exception as e:
+                    print(f"Failed to load {filename}: {e}")
+        
+        # Sync Slash Commands
+        await self.tree.sync()
+        print("✅ Slash commands synced!")
+
+bot = MyBot()
 
 # --- Events ---
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user} (ID: {bot.user.id})")
     print("------")
-    # Load Cogs
-    for filename in os.listdir('./cogs'):
-        if filename.endswith('.py'):
-            try:
-                await bot.load_extension(f'cogs.{filename[:-3]}')
-                print(f"Loaded {filename}")
-            except Exception as e:
-                print(f"Failed to load {filename}: {e}")
 
 # --- Start Web Server in Background ---
 def start_web():
