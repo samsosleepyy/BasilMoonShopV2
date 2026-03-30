@@ -8,6 +8,7 @@ import asyncio
 import io
 import resource
 import json
+import hashlib
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -46,13 +47,33 @@ class AdminSystem(commands.Cog):
         try:
             if not os.path.exists(DATA_FILE): return
             data = load_data()
+            with open(DATA_FILE, "rb") as f:
+                backup_hash = hashlib.sha256(f.read()).hexdigest()
+            now_ts = int(datetime.datetime.now().timestamp())
             
             if "guilds" in data:
                 count_sent = 0
+                changed = False
                 for guild_id_str, guild_data in data["guilds"].items():
                     channel_id = guild_data.get("autobackup_channel")
                     if channel_id:
                         try:
+                            channel_id = int(channel_id)
+                            interval_sec = int(guild_data.get("autobackup_interval_sec", 21600))
+                            if interval_sec < 1800:
+                                interval_sec = 1800
+
+                            last_sent_ts = int(guild_data.get("autobackup_last_sent_ts", 0))
+                            last_hash = guild_data.get("autobackup_last_hash")
+
+                            # ส่งเฉพาะเมื่อถึงเวลาเท่านั้น
+                            if now_ts - last_sent_ts < interval_sec:
+                                continue
+
+                            # ถ้าข้อมูลยังไม่เปลี่ยนและเคยส่งไปแล้ว ให้ข้ามเพื่อลด API Call
+                            if last_hash == backup_hash and last_sent_ts > 0:
+                                continue
+
                             channel = self.bot.get_channel(channel_id) or await self.bot.fetch_channel(channel_id)
                             if channel:
                                 ram_usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
@@ -73,9 +94,16 @@ class AdminSystem(commands.Cog):
                                 file = discord.File(DATA_FILE, filename=filename)
                                 await channel.send(content=report_msg, file=file)
                                 count_sent += 1
-                                await asyncio.sleep(2) 
+                                guild_data["autobackup_last_sent_ts"] = now_ts
+                                guild_data["autobackup_last_hash"] = backup_hash
+                                changed = True
+                                await asyncio.sleep(3)
                         except Exception as e:
                             print(f"Auto-backup fail for {guild_id_str}: {e}")
+                if changed:
+                    save_data(data)
+                if count_sent:
+                    print(f"📦 Auto-backup sent: {count_sent} guild(s)")
         except Exception as e:
             print(f"Auto-backup loop error: {e}")
 
